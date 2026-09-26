@@ -1,5 +1,4 @@
 import type { Camera } from '../render/camera';
-import { FLOOR_CARPET, FLOOR_CHECKER, FLOOR_CONCRETE, FLOOR_PARQUET, FLOOR_TATAMI, FLOOR_TILES } from '../render/interiors';
 import { H_DOCKS, H_DOWNTOWN, H_JAPAN, H_OLDTOWN, H_PARIS } from '../world/hoods';
 import type { Vehicle } from '../world/traffic';
 import type { EventMode } from '../world/events';
@@ -15,12 +14,7 @@ export interface SoundState {
   indoors: boolean;
   /** Name of the room program underfoot (e.g. 'NOODLE BAR'), or '' outdoors. */
   room: string;
-  /** Floor pattern underfoot (FLOOR_* from render/interiors), or -1 outdoors. */
-  floor: number;
   weather: string;
-  /** Increments once per footstep. */
-  steps: number;
-  running: boolean;
   /** 0 idle, 1 doors closing, 2 moving, 3 doors opening. */
   lift: number;
   cars: readonly Vehicle[];
@@ -47,36 +41,16 @@ interface Voice {
   engineGain: GainNode;
 }
 
-interface Step {
-  type: BiquadFilterType;
-  freq: number;
-  q: number;
-  dur: number;
-  gain: number;
-}
-
-const STEP_STREET: Step = { type: 'bandpass', freq: 1300, q: 1.2, dur: 0.06, gain: 0.48 };
-const STEP_WET: Step = { type: 'highpass', freq: 1800, q: 0.7, dur: 0.09, gain: 0.44 };
-const STEP_SNOW: Step = { type: 'lowpass', freq: 900, q: 0.8, dur: 0.14, gain: 0.55 };
-const STEPS: Record<number, Step> = {
-  [FLOOR_TILES]: { type: 'bandpass', freq: 2600, q: 2.5, dur: 0.045, gain: 0.66 },
-  [FLOOR_CHECKER]: { type: 'bandpass', freq: 2400, q: 2.5, dur: 0.045, gain: 0.66 },
-  [FLOOR_PARQUET]: { type: 'bandpass', freq: 420, q: 3, dur: 0.08, gain: 0.99 },
-  [FLOOR_CARPET]: { type: 'lowpass', freq: 380, q: 0.7, dur: 0.07, gain: 0.40 },
-  [FLOOR_TATAMI]: { type: 'lowpass', freq: 260, q: 0.7, dur: 0.1, gain: 0.44 },
-  [FLOOR_CONCRETE]: { type: 'bandpass', freq: 1700, q: 0.8, dur: 0.07, gain: 0.55 },
-};
-
 /** Pentatonic notes for Japantown's wind chimes. */
 const CHIMES = [1568, 1760, 2093, 2349, 2637, 3136];
 
 /** Kinds of sound that can be switched off one by one. */
-export const SOUND_KINDS = ['ambience', 'traffic', 'steps', 'events', 'radio'] as const;
+export const SOUND_KINDS = ['ambience', 'traffic', 'lift', 'events', 'radio'] as const;
 export type SoundKind = (typeof SOUND_KINDS)[number];
 export const SOUND_KIND_LABELS: Record<SoundKind, string> = {
   ambience: 'City & weather',
   traffic: 'Traffic & rides',
-  steps: 'Footsteps & lifts',
+  lift: 'Lifts',
   events: 'Fireworks, cats, thunder',
   radio: 'Taxi radio',
 };
@@ -110,7 +84,6 @@ export class Sound {
   private volume = 1;
   private radio: Radio | null = null;
   private t = 0;
-  private lastSteps = 0;
   private lastLift = 0;
   private nextChirp = 0;
   private inBrownout = false;
@@ -209,7 +182,7 @@ export class Sound {
     this.wind = this.bed('bandpass', 380, 0.5, this.outside('ambience'));
     this.rumble = this.bed('lowpass', 160, 0.7, this.inside('traffic'));
     this.hum = this.bed('lowpass', 200, 0.7, this.inside('ambience'));
-    this.motor = this.bed('lowpass', 110, 1.5, this.inside('steps'));
+    this.motor = this.bed('lowpass', 110, 1.5, this.inside('lift'));
     this.fry = this.gainNode(0, this.inside('ambience'));
     const fs = ctx.createBufferSource();
     fs.buffer = this.sizzle;
@@ -429,7 +402,6 @@ export class Sound {
     this.level(this.rainBed, s.weather === 'rain' ? 0.07 : 0, 0.8);
     this.level(this.wind, snow ? 0.12 : 0, 1.5);
     this.traffic(s);
-    this.footsteps(s);
     this.lift(s);
     this.room(s);
     this.district(s);
@@ -484,24 +456,13 @@ export class Sound {
     });
   }
 
-  private footsteps(s: SoundState): void {
-    if (s.steps === this.lastSteps) return;
-    this.lastSteps = s.steps;
-    if (s.mode !== 'walk') return;
-    const st = s.floor >= 0 ? STEPS[s.floor] ?? STEP_STREET
-      : s.weather === 'rain' ? STEP_WET : s.weather === 'snow' ? STEP_SNOW : STEP_STREET;
-    const k = s.running ? 1.3 : 1;
-    const pan = (s.steps & 1) === 0 ? -0.15 : 0.15;
-    this.burst(st.type, st.freq * (0.9 + Math.random() * 0.2), st.q, st.dur, st.gain * k, this.inside('steps'), 0, pan);
-  }
-
   private lift(s: SoundState): void {
     const phase = s.lift;
     if (phase !== this.lastLift) {
-      if (phase === 1 || phase === 3) this.burst('bandpass', 700, 0.8, 0.7, 0.12, this.inside('steps'));
+      if (phase === 1 || phase === 3) this.burst('bandpass', 700, 0.8, 0.7, 0.12, this.inside('lift'));
       if (phase === 3) {
-        this.tone(1319, 0.9, 0.12, this.inside('steps'));
-        this.tone(1047, 1.2, 0.1, this.inside('steps'), { delay: 0.18 });
+        this.tone(1319, 0.9, 0.12, this.inside('lift'));
+        this.tone(1047, 1.2, 0.1, this.inside('lift'), { delay: 0.18 });
       }
       this.lastLift = phase;
     }

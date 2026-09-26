@@ -37,9 +37,6 @@ export class Player {
   pitch = 0.04;
   /** Height of the floor the walker stands on: 0 outdoors, a storey height inside buildings. */
   floorY = 0;
-  /** Counts footsteps (one per half cycle of the head bob), for sound. */
-  steps = 0;
-  running = false;
   private ride: { from: number; to: number; t: number; dur: number } | null = null;
   private lookYaw = 0;
   private lookPitch = 0;
@@ -232,12 +229,7 @@ export class Player {
           if (!hit(nx, this.z)) this.x = nx;
           const nz = this.z + mz * sp;
           if (!hit(this.x, nz)) this.z = nz;
-          if (len > 0) {
-            const half = Math.floor(this.bob / Math.PI);
-            this.bob += sp * 1.9;
-            if (Math.floor(this.bob / Math.PI) !== half) this.steps++;
-          }
-          this.running = run && len > 0;
+          if (len > 0) this.bob += sp * 1.9;
         }
         this.y = this.floorY + EYE + Math.sin(this.bob) * (len > 0 ? 0.035 : 0);
       } else {
