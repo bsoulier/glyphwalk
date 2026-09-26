@@ -50,11 +50,13 @@ export class Rain {
     }
   }
 
-  draw(fb: FrameBuffer): void {
+  /** Drops nearer than `minDepth` are skipped (used indoors). */
+  draw(fb: FrameBuffer, minDepth = 0): void {
     const { cols, rows, fg, depth } = fb;
     const d = this.drops;
     for (let o = 0; o < d.length; o += STRIDE) {
       const z = d[o + 2];
+      if (z < minDepth) continue;
       const col = Math.floor(d[o] * cols);
       let row = Math.floor(d[o + 1] * rows);
       const iz = 1 / z;

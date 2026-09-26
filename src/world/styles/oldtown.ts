@@ -5,8 +5,10 @@ import {
   awning, chimney, fountain, gableRoof, jitter, perimeterLots, pick, sideOf, streetTrees, tree, wallSign,
 } from '../build';
 import { BOX_SIDES } from '../faces';
+import { BAR, BEDROOM, LIVING, shopFor } from '../furniture';
+import { enterable } from '../interior';
 import { HALF, KIND_PARK, KIND_PLAZA, P } from '../layout';
-import { SIGNS_OLDTOWN, WARM_SIGNS, type RGB } from '../signs';
+import { SIGNS_OLDTOWN, SIGN_TEXTS, WARM_SIGNS, type RGB } from '../signs';
 
 const PLASTER: readonly RGB[] = [[205, 175, 115], [195, 135, 120], [150, 180, 150], [205, 195, 165], [145, 170, 195], [210, 160, 110]];
 const BRICK: readonly RGB[] = [[150, 70, 50], [130, 62, 46], [165, 88, 62]];
@@ -19,12 +21,17 @@ export function buildOldTown(B: Builder, i: number, j: number, kind: number, lot
   const bx = i * P, bz = j * P;
   if (kind === KIND_PLAZA) return market(B, bx + HALF, bz + HALF);
   if (kind === KIND_PARK) return green(B, lot, bx + HALF, bz + HALF);
-  for (const L of perimeterLots(B.rng, lot, 10, 4.4, 7)) house(B, L);
+  let inn = B.alt() < 0.4;
+  for (const L of perimeterLots(B.rng, lot, 10, 4.4, 7)) {
+    if (house(B, L, inn)) inn = false;
+  }
   if (B.rng() < 0.15) streetTrees(B, bx, bz, TREE_ROUND, 0.8, [24, 40]);
 }
 
-/** Narrow row house with its gable facing the street, the classic old-European skyline. */
-function house(B: Builder, L: Lot): void {
+const TEXT_INN = SIGN_TEXTS.indexOf('INN');
+
+/** Narrow row house with its gable facing the street, the classic old-European skyline. Returns true when it became the inn. */
+function house(B: Builder, L: Lot, inn: boolean): boolean {
   const { rng, faces } = B;
   const floors = 2 + Math.floor(rng() * 3);
   const h = floors * FLOOR_H[F_BRICK];
@@ -32,7 +39,6 @@ function house(B: Builder, L: Lot): void {
   const style = brick ? Math.floor(rng() * 2) : 2 + Math.floor(rng() * 2);
   const c = jitter(rng, pick(rng, brick ? BRICK : PLASTER), 0.08);
   const seed = facadeSeed(F_BRICK, style, 2 + Math.floor(rng() * 5), 1, Math.floor(rng() * 4096));
-  faces.box(L.x0, 0, L.z0, L.x1, h, L.z1, M_WALL, c[0], c[1], c[2], seed, M_ROOF, BOX_SIDES);
 
   const alongX = L.side === 1 || L.side === 3;
   const frontage = alongX ? L.z1 - L.z0 : L.x1 - L.x0;
@@ -45,9 +51,25 @@ function house(B: Builder, L: Lot): void {
   if (alongX) chimney(B, L.x0 + (L.x1 - L.x0) * back, cz, h + rise * 0.5, h + rise + 0.9, 0.35, 0.35, CHIMNEY);
   else chimney(B, cx, L.z0 + (L.z1 - L.z0) * back, h + rise * 0.5, h + rise + 0.9, 0.35, 0.35, CHIMNEY);
 
-  B.colliders.push(L.x0, L.z0, L.x1, L.z1);
   B.maxH = Math.max(B.maxH, h + rise + 1);
-  if (rng() < 0.25) wallSign(B, sideOf(L, L.side), SIGNS_OLDTOWN, WARM_SIGNS, 3.05, 1);
+  const text = rng() < 0.25 ? wallSign(B, sideOf(L, L.side), SIGNS_OLDTOWN, WARM_SIGNS, 3.05, 1) : -1;
+
+  const shop = shopFor(text);
+  const base = { rect: L, side: L.side, h, mat: M_WALL, color: c, seed, capMat: M_ROOF, mask: BOX_SIDES };
+  if (inn && text < 0 && floors >= 3 && Math.min(L.x1 - L.x0, L.z1 - L.z0) >= 5) {
+    enterable(B, {
+      ...base, doorW: 1.4, label: 'INN', sign: TEXT_INN, open: false, canopy: true,
+      programs: [BAR, LIVING, BEDROOM], text: TEXT_INN,
+    });
+    return true;
+  }
+  if (shop && B.alt() < 0.8) {
+    enterable(B, { ...base, doorW: 1.4, label: SIGN_TEXTS[text], sign: -1, open: true, canopy: false, programs: [shop, null, null], text });
+    return false;
+  }
+  faces.box(L.x0, 0, L.z0, L.x1, h, L.z1, M_WALL, c[0], c[1], c[2], seed, M_ROOF, BOX_SIDES);
+  B.colliders.push(L.x0, L.z0, L.x1, L.z1);
+  return false;
 }
 
 /** Market square: fountain ringed by striped stalls. */

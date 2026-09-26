@@ -3,7 +3,8 @@ import type { Input } from './input';
 import type { World } from '../world/world';
 import type { Vehicle } from '../world/traffic';
 import { HOOD_BLOCKS, hoodAt } from '../world/hoods';
-import { P, RAIL_TOP } from '../world/layout';
+import { type Interior, inCab } from '../world/interior';
+import { EYE_H, P, RAIL_TOP } from '../world/layout';
 import { REGION, TRAIN_LEN } from '../world/train';
 
 export const MODES = ['walk', 'fly', 'cctv', 'taxi', 'sky', 'rail'] as const;
@@ -17,8 +18,10 @@ export const MODE_LABELS: Record<Mode, string> = {
   rail: 'MONORAIL / front seat',
 };
 
-const EYE = 1.7;
+const EYE = EYE_H;
 const RADIUS = 0.35;
+/** Seconds for the lift doors to close before the cab moves, and to open once it stops. */
+const LIFT_DOORS_T = 0.7;
 const SENS = 0.0023;
 const FWD_KEYS = ['KeyW', 'ArrowUp'];
 const BACK_KEYS = ['KeyS', 'ArrowDown'];
@@ -32,6 +35,9 @@ export class Player {
   z = 22;
   yaw = 0.35;
   pitch = 0.04;
+  /** Height of the floor the walker stands on: 0 outdoors, a storey height inside buildings. */
+  floorY = 0;
+  private ride: { from: number; to: number; t: number; dur: number } | null = null;
   private lookYaw = 0;
   private lookPitch = 0;
   private target = 0;
@@ -75,6 +81,8 @@ export class Player {
       this.railDir = 0;
     }
     if (mode === 'walk') {
+      this.floorY = 0;
+      this.ride = null;
       this.y = EYE;
       if (world.city.collides(this.x, this.z, RADIUS)) {
         const rx = Math.round(this.x / P) * P, rz = Math.round(this.z / P) * P;
@@ -85,15 +93,51 @@ export class Player {
     this.onCut?.();
   }
 
-  /** On foot, the player is someone cars stop for. */
+  /** On foot at street level, the player is someone cars stop for. */
   walker(): { x: number; z: number } | null {
-    return this.mode === 'walk' ? this : null;
+    return this.mode === 'walk' && this.floorY < 0.5 ? this : null;
+  }
+
+  get liftMoving(): boolean {
+    return this.ride !== null;
+  }
+
+  /** How far the doors of the lift being ridden are closed: 0 open, 1 shut. */
+  get liftDoors(): number {
+    const r = this.ride;
+    if (!r) return 0;
+    if (r.t < LIFT_DOORS_T) return r.t / LIFT_DOORS_T;
+    const opening = r.t - LIFT_DOORS_T - r.dur;
+    return opening > 0 ? Math.max(0, 1 - opening / LIFT_DOORS_T) : 1;
+  }
+
+  /**
+   * Standing in a lift cab, go one served floor up (dir 1) or down (-1). The doors close first, the
+   * cab moves only while they are shut (eased, longer for longer trips), then they open on the new floor.
+   */
+  useLift(dir: number, world: World): boolean {
+    if (this.mode !== 'walk' || this.ride) return false;
+    const it = world.city.interiorAt(this.x, this.z);
+    if (!it || !inCab(it, this.x, this.z)) return false;
+    const k = it.levels.findIndex((l) => Math.abs(l.y - this.floorY) < 0.5);
+    const n = k + dir;
+    if (k < 0 || n < 0 || n >= it.levels.length) return false;
+    const to = it.levels[n].y;
+    this.ride = { from: this.floorY, to, t: 0, dur: clamp(Math.abs(to - this.floorY) / 12, 1.6, 5) };
+    return true;
+  }
+
+  /** The building the walker is in, if any. */
+  inside(world: World): Interior | null {
+    return this.mode === 'walk' ? world.city.interiorAt(this.x, this.z) : null;
   }
 
   teleport(x: number, z: number, yaw: number, world: World): void {
     this.x = x;
     this.z = z;
     this.yaw = yaw;
+    this.floorY = 0;
+    this.ride = null;
     if (this.mode !== 'fly') this.pitch = 0.02;
     this.lookYaw = 0;
     this.lookPitch = 0;
@@ -156,16 +200,25 @@ export class Player {
       const run = input.down('ShiftLeft') || input.down('ShiftRight');
       const fX = Math.sin(this.yaw), fZ = Math.cos(this.yaw), rX = fZ, rZ = -fX;
       if (this.mode === 'walk') {
-        const sp = (run ? 9 : 4.2) * dt;
-        let mx = fX * fwd + rX * str, mz = fZ * fwd + rZ * str;
-        const len = Math.hypot(mx, mz);
-        if (len > 1) { mx /= len; mz /= len; }
-        const nx = this.x + mx * sp;
-        if (!world.city.collides(nx, this.z, RADIUS)) this.x = nx;
-        const nz = this.z + mz * sp;
-        if (!world.city.collides(this.x, nz, RADIUS)) this.z = nz;
-        if (len > 0) this.bob += sp * 1.9;
-        this.y = EYE + Math.sin(this.bob) * (len > 0 ? 0.035 : 0);
+        const r = this.ride;
+        let len = 0;
+        if (r) {
+          r.t += dt;
+          const s = Math.min(1, Math.max(0, (r.t - LIFT_DOORS_T) / r.dur));
+          this.floorY = r.from + (r.to - r.from) * s * s * (3 - 2 * s);
+          if (r.t >= r.dur + 2 * LIFT_DOORS_T) this.ride = null;
+        } else {
+          const sp = (run ? 9 : 4.2) * dt;
+          let mx = fX * fwd + rX * str, mz = fZ * fwd + rZ * str;
+          len = Math.hypot(mx, mz);
+          if (len > 1) { mx /= len; mz /= len; }
+          const nx = this.x + mx * sp;
+          if (!world.city.collides(nx, this.z, RADIUS, this.floorY)) this.x = nx;
+          const nz = this.z + mz * sp;
+          if (!world.city.collides(this.x, nz, RADIUS, this.floorY)) this.z = nz;
+          if (len > 0) this.bob += sp * 1.9;
+        }
+        this.y = this.floorY + EYE + Math.sin(this.bob) * (len > 0 ? 0.035 : 0);
       } else {
         const sp = (run ? 70 : 22) * dt;
         const cp = Math.cos(this.pitch), sp_ = Math.sin(this.pitch);

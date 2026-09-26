@@ -11,6 +11,7 @@ import { CHARSET } from './core/charset';
 import { Input } from './game/input';
 import { MODES, MODE_LABELS, Player, type Mode } from './game/player';
 import { HOODS, HOOD_BLOCKS, hoodAt, nearestRegion } from './world/hoods';
+import { inCab, levelAt } from './world/interior';
 import { P, setWorldSeed } from './world/layout';
 import { World } from './world/world';
 import { Hud } from './ui/hud';
@@ -217,6 +218,8 @@ function handleKeys(): void {
       case 'KeyN': player.next(world); break;
       case 'KeyB': goToHood((currentHood() + 1) % HOODS.length); break;
       case 'KeyM': cycleMap(); break;
+      case 'KeyE': player.useLift(1, world); break;
+      case 'KeyQ': player.useLift(-1, world); break;
       case 'Escape': fullMap = false; break;
       case 'Equal':
       case 'NumpadAdd':
@@ -278,6 +281,7 @@ function updateHud(): void {
   const compass = COMPASS[Math.round(bearing / 45) % 8];
   const hood = hoodAt(Math.floor(cam.x / P), Math.floor(cam.z / P));
   const district = HOODS[hood].name;
+  const indoors = player.inside(world);
   hud.setHood(hood);
   hud.setStats([
     `MODE     ${MODE_LABELS[player.mode]}`,
@@ -287,7 +291,7 @@ function updateHud(): void {
     `DRAWN    ${stats.faces} faces / ${stats.blocks} blocks / ${stats.actors} actors`,
     `POS      ${cam.x.toFixed(1)} / ${cam.z.toFixed(1)}  alt ${cam.y.toFixed(1)}`,
     `BEARING  ${bearing.toFixed(0).padStart(3, '0')} ${compass}`,
-    `SECTOR   ${district}`,
+    `SECTOR   ${district}${indoors ? ` / ${indoors.label}` : ''}`,
     `WEATHER  ${settings.rain ? 'RAIN' : 'CLEAR'}`,
     `RENDER   ${presenter.name}`,
   ].join('\n'));
@@ -301,6 +305,10 @@ function updateHud(): void {
     hud.setOsd(`${MODE_LABELS[player.mode]}\n${district} loop\nN: next vehicle in ${district}`);
   } else if (player.mode === 'rail') {
     hud.setOsd(`${MODE_LABELS[player.mode]}\n${district} shuttle`);
+  } else if (indoors) {
+    const lv = levelAt(indoors, player.floorY);
+    const hint = player.liftMoving ? 'LIFT moving...' : inCab(indoors, player.x, player.z) ? 'LIFT  E up / Q down' : indoors.lift ? 'Lift at the back' : '';
+    hud.setOsd(`${indoors.label}\n${lv ? lv.name : ''}\n${hint}`);
   } else hud.setOsd(null);
 }
 
@@ -342,6 +350,7 @@ function frame(now: number): void {
     flash: flicker,
     propDist: Math.min(170, settings.dist * 0.65),
     hidden: player.mode === 'sky' ? player.riding(world) : null,
+    liftDoors: player.liftDoors,
   }, rain);
   if (staticT > 0) {
     addStatic(staticT);

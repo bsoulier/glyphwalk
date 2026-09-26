@@ -6,11 +6,16 @@ export const SIGN_TEXTS: readonly string[] = [
   'BRASSERIE', 'BOULANGERIE', 'PHARMACIE', 'BISTRO', 'LIBRAIRIE', 'FROMAGERIE', 'TABAC', 'PATISSERIE',
   'TAVERN', 'BAKERY', 'INN', 'APOTHECARY', 'CANDLES', 'ANTIQUES', 'BUTCHER', 'CLOCKS',
   'DOCK 7', 'FREIGHT', 'CUSTOMS', 'BONDED', 'PIER 3', 'GATE B',
-  'STOP', 'WALK',
+  'STOP', 'WALK', 'LOBBY', 'LIFT', 'OFFICE',
 ];
 
 export const TEXT_STOP = SIGN_TEXTS.indexOf('STOP');
 export const TEXT_WALK = SIGN_TEXTS.indexOf('WALK');
+export const TEXT_OPEN = SIGN_TEXTS.indexOf('OPEN');
+export const TEXT_HOTEL = SIGN_TEXTS.indexOf('HOTEL');
+export const TEXT_LOBBY = SIGN_TEXTS.indexOf('LOBBY');
+export const TEXT_LIFT = SIGN_TEXTS.indexOf('LIFT');
+export const TEXT_OFFICE = SIGN_TEXTS.indexOf('OFFICE');
 
 function signSet(...words: string[]): readonly number[] {
   return words.map((w) => {

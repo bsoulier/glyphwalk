@@ -4,6 +4,7 @@ import {
 } from '../render/materials';
 import { BOX_BOTTOM, BOX_SIDES, BOX_TOP, FaceList } from './faces';
 import type { Hood } from './hoods';
+import type { Interior } from './interior';
 import { HALF, LAMP_OFF, LAMP_SPACING, P, TREE_OFF, hasPond } from './layout';
 import {
   SIGN_CHAR_W, SIGN_H, SIGN_PAD, SIGN_TEXTS, VSIGN_CHAR_H, VSIGN_PAD, VSIGN_W, signSeed, type RGB,
@@ -20,12 +21,21 @@ export const LIGHT_FAR = 3;
 
 export interface Builder {
   rng: () => number;
+  /**
+   * Separate stream for choosing which buildings can be entered, so adding that choice leaves the
+   * rest of the block (heights, colours, signs) exactly as before.
+   */
+  alt: () => number;
   hood: number;
   faces: FaceList;
   props: FaceList;
   poles: number[];
   lights: number[];
+  /** x0, z0, x1, z1: solid at every height. */
   colliders: number[];
+  /** x0, z0, x1, z1, y0, y1: solid only for feet between y0 and y1 (furniture, walls above a door). */
+  levelColliders: number[];
+  interiors: Interior[];
   maxH: number;
 }
 
@@ -99,13 +109,14 @@ export function perimeterLots(rng: () => number, r: Rect, depth: number, minW: n
   return out;
 }
 
+/** Returns the chosen text, or -1 when none fits. */
 export function wallSign(
   B: Builder, s: Side, texts: readonly number[], colors: readonly RGB[], y0: number, scale: number,
-): boolean {
+): number {
   const { rng } = B;
   const maxChars = Math.floor((s.len / scale - 1 - 2 * SIGN_PAD) / SIGN_CHAR_W);
   const fits = texts.filter((k) => SIGN_TEXTS[k].length <= maxChars);
-  if (fits.length === 0) return false;
+  if (fits.length === 0) return -1;
   const ti = pick(rng, fits);
   const wu = SIGN_TEXTS[ti].length * SIGN_CHAR_W + 2 * SIGN_PAD;
   const W = wu * scale, H = SIGN_H * scale;
@@ -118,16 +129,16 @@ export function wallSign(
     ax, y0, az, bx, y0, bz, bx, y0 + H, bz, ax, y0 + H, az,
     0, 0, wu, 0, wu, SIGN_H, 0, SIGN_H, M_SIGN, c[0], c[1], c[2], seed,
   );
-  return true;
+  return ti;
 }
 
-/** Double-sided vertical sign sticking out of the wall, readable from both directions along the street. */
+/** Double-sided vertical sign sticking out of the wall, readable from both directions along the street. Returns its text or -1. */
 export function bladeSign(
   B: Builder, s: Side, t: number, y0: number, texts: readonly number[], colors: readonly RGB[], maxH: number,
-): void {
+): number {
   const { rng } = B;
   const fits = texts.filter((k) => SIGN_TEXTS[k].length * VSIGN_CHAR_H + 2 * VSIGN_PAD <= maxH);
-  if (fits.length === 0) return;
+  if (fits.length === 0) return -1;
   const ti = pick(rng, fits);
   const H = SIGN_TEXTS[ti].length * VSIGN_CHAR_H + 2 * VSIGN_PAD;
   const qx = s.p0x + s.tx * t + s.nx * 0.25, qz = s.p0z + s.tz * t + s.nz * 0.25;
@@ -138,6 +149,7 @@ export function bladeSign(
   B.props.poly(qx, y0, qz, ex, y0, ez, ex, y1, ez, qx, y1, qz, 0, 0, 1, 0, 1, H, 0, H, M_VSIGN, c[0], c[1], c[2], seed);
   B.props.poly(ex, y0, ez, qx, y0, qz, qx, y1, qz, ex, y1, ez, 0, 0, 1, 0, 1, H, 0, H, M_VSIGN, c[0], c[1], c[2], seed);
   B.lights.push((qx + ex) / 2, y0 + H / 2, (qz + ez) / 2, c[0], c[1], c[2], LIGHT_FAR);
+  return ti;
 }
 
 export function lanterns(B: Builder, s: Side, y: number, spacing: number): void {

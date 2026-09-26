@@ -5,8 +5,10 @@ import {
   awning, chimney, fountain, hipRoof, jitter, perimeterLots, pick, sideOf, streetTrees, tree, wallSign,
 } from '../build';
 import { BOX_SIDES } from '../faces';
+import { CAFE, HOTEL_ROOM, LOBBY, shopFor } from '../furniture';
+import { enterable } from '../interior';
 import { HALF, KIND_CITY, P } from '../layout';
-import { SIGNS_PARIS, WARM_SIGNS, type RGB } from '../signs';
+import { SIGNS_PARIS, SIGN_TEXTS, TEXT_HOTEL, WARM_SIGNS, type RGB } from '../signs';
 
 const STONE: readonly RGB[] = [[210, 196, 164], [200, 186, 154], [218, 206, 176], [196, 184, 160]];
 const SLATE: readonly RGB[] = [[78, 86, 104], [70, 78, 96], [84, 90, 106]];
@@ -27,16 +29,21 @@ export function buildParis(B: Builder, i: number, j: number, kind: number, lot: 
   // One cornice height per block, like a Haussmann street wall.
   const floors = 5 + (rng() < 0.5 ? 1 : 0);
   const h = floors * FLOOR_H[F_STONE] + 0.5;
-  for (const L of perimeterLots(rng, lot, 13, 10, 17)) immeuble(B, L, h);
+  let hotel = B.alt() < 0.35;
+  for (const L of perimeterLots(rng, lot, 13, 10, 17)) {
+    if (immeuble(B, L, h, hotel)) hotel = false;
+  }
   if (rng() < 0.85) streetTrees(B, bx, bz, TREE_PLANE, 1, TREE_ROW, TREE_SETBACK);
 }
 
-function immeuble(B: Builder, L: Lot, h: number): void {
+const TEXT_CAFE = SIGN_TEXTS.indexOf('CAFE');
+
+/** Returns true when this lot became the block's hotel. */
+function immeuble(B: Builder, L: Lot, h: number, hotel: boolean): boolean {
   const { rng, faces } = B;
   const c = jitter(rng, pick(rng, STONE), 0.05);
   const id = Math.floor(rng() * 4096);
   const seed = facadeSeed(F_STONE, 0, 2 + Math.floor(rng() * 5), 1, id);
-  faces.box(L.x0, 0, L.z0, L.x1, h, L.z1, M_WALL, c[0], c[1], c[2], seed, M_ROOF, BOX_SIDES);
   hipRoof(faces, L, h, MANSARD_RISE, MANSARD_INSET, 0.2, M_MANSARD, pick(rng, SLATE), facadeSeed(F_GENERIC, 0, 2 + Math.floor(rng() * 4), 1, id), M_ROOF, true);
 
   const top = h + MANSARD_RISE;
@@ -48,12 +55,37 @@ function immeuble(B: Builder, L: Lot, h: number): void {
     if (alongX) chimney(B, L.x0 + MANSARD_INSET + t * (L.x1 - L.x0 - 2 * MANSARD_INSET), L.z0 + MANSARD_INSET + 0.4, top, top + 1.4, 0.9, 0.3, pot);
     else chimney(B, L.x0 + MANSARD_INSET + 0.4, L.z0 + MANSARD_INSET + t * (L.z1 - L.z0 - 2 * MANSARD_INSET), top, top + 1.4, 0.3, 0.9, pot);
   }
-  B.colliders.push(L.x0, L.z0, L.x1, L.z1);
   B.maxH = Math.max(B.maxH, top + 1.5);
 
   const s = sideOf(L, L.side);
-  if (rng() < 0.45) awning(B, s, 0.8, s.len - 0.8, 3.1, 1.8, Math.floor(rng() * 4));
-  else if (rng() < 0.5) wallSign(B, s, SIGNS_PARIS, WARM_SIGNS, 3.4, 1);
+  let text = -1;
+  const cafe = rng() < 0.45;
+  if (cafe) awning(B, s, 0.8, s.len - 0.8, 3.1, 1.8, Math.floor(rng() * 4));
+  else if (rng() < 0.5) text = wallSign(B, s, SIGNS_PARIS, WARM_SIGNS, 3.4, 1);
+
+  // The shell goes in last, once we know whether its ground floor is a shop, a hotel or private.
+  const shop = cafe ? CAFE : shopFor(text);
+  const base = {
+    rect: L, side: L.side, h, mat: M_WALL, color: c, seed,
+    capMat: M_ROOF, mask: BOX_SIDES,
+  };
+  if (hotel && !shop && s.len >= 10) {
+    enterable(B, {
+      ...base, doorW: 2.0, label: 'HOTEL', sign: text >= 0 ? -1 : TEXT_HOTEL, open: false, canopy: true,
+      programs: [LOBBY, HOTEL_ROOM, HOTEL_ROOM], text: -1,
+    });
+    return true;
+  }
+  if (shop && B.alt() < 0.6) {
+    enterable(B, {
+      ...base, doorW: 1.5, label: cafe ? 'CAFE' : SIGN_TEXTS[text], sign: -1, open: true, canopy: false,
+      programs: [shop, null, null], text: cafe ? TEXT_CAFE : text,
+    });
+    return false;
+  }
+  faces.box(L.x0, 0, L.z0, L.x1, h, L.z1, M_WALL, c[0], c[1], c[2], seed, M_ROOF, BOX_SIDES);
+  B.colliders.push(L.x0, L.z0, L.x1, L.z1);
+  return false;
 }
 
 /** Place with a tiered fountain, gravel walks and an inner ring of plane trees. */

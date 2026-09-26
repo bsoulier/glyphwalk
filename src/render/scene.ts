@@ -7,6 +7,7 @@ import type { Vehicle } from '../world/traffic';
 import { LIGHT_BLINK, LIGHT_FAR, LIGHT_LANTERN } from '../world/build';
 import { LIGHT_STRIDE, POLE_STRIDE } from '../world/city';
 import { FACE_STRIDE } from '../world/faces';
+import { type Interior, drawInterior } from '../world/interior';
 import { drawBackground } from './background';
 import { beginMaterials } from './materials';
 import { beginRaster, drawFace, drawPoint, drawVLine, stats } from './raster';
@@ -18,6 +19,8 @@ export interface FrameEnv {
   flash: number;
   propDist: number;
   hidden: Vehicle | null;
+  /** How far the doors of the lift the camera rides in are closed, 0 to 1. */
+  liftDoors: number;
 }
 
 // Must match the sky colour at the horizon in background.ts so fogged geometry melts into the sky.
@@ -38,15 +41,29 @@ export function renderScene(fb: FrameBuffer, cam: Camera, world: World, env: Fra
 
   const blocks = world.city.collect(cam);
   stats.blocks = blocks.length;
-  for (const b of blocks) drawBlock(b, env);
+  let indoors: Interior | null = null;
+  for (const b of blocks) {
+    const it = drawBlock(b, cam, env);
+    if (it) indoors = it;
+  }
   world.drawActors(cam, env.time, env.rain, env.hidden);
   drawBackground(fb, cam, env);
-  if (rain.on) rain.draw(fb);
+  // Indoors, only drops beyond the far wall can be outside; nearer ones would fall in the room.
+  if (rain.on) rain.draw(fb, indoors ? farCorner(indoors, cam) : 0);
 }
 
-function drawBlock(b: Block, env: FrameEnv): void {
+function farCorner(r: Interior, cam: Camera): number {
+  const dx = Math.max(Math.abs(r.x0 - cam.x), Math.abs(r.x1 - cam.x));
+  const dz = Math.max(Math.abs(r.z0 - cam.z), Math.abs(r.z1 - cam.z));
+  return Math.hypot(dx, dz);
+}
+
+/** Returns the interior the camera stands in, if it belongs to this block. */
+function drawBlock(b: Block, cam: Camera, env: FrameEnv): Interior | null {
   const f = b.faces;
   for (let o = 0; o < f.length; o += FACE_STRIDE) drawFace(f, o);
+  let indoors: Interior | null = null;
+  for (const it of b.interiors) if (drawInterior(it, cam, env.liftDoors)) indoors = it;
   const near = b.dist < env.propDist;
   if (near) {
     const p = b.props;
@@ -74,4 +91,5 @@ function drawBlock(b: Block, env: FrameEnv): void {
         if (!near || b.dist > 30) drawPoint(L[o], L[o + 1], L[o + 2], G_STAR, L[o + 3], L[o + 4], L[o + 5], 0.45, 1);
     }
   }
+  return indoors;
 }

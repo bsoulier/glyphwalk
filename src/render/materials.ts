@@ -1,6 +1,7 @@
 import { glyph } from '../core/charset';
 import { hash3 } from '../core/hash';
 import { awning, corrugated, mansard, sign, tiles, vsign, wall } from './facades';
+import { ceiling, floor, goods, plaster, screen, woodgrain } from './interiors';
 import { beginSurface, fxC, put, time } from './surface';
 
 export { put, putRaw } from './surface';
@@ -28,6 +29,12 @@ export const M_VSIGN = 19;
 export const M_CORRUGATED = 20;
 export const M_PAINT = 21;
 export const M_WATER = 22;
+export const M_PLASTER = 23;
+export const M_FLOOR = 24;
+export const M_CEILING = 25;
+export const M_WOOD = 26;
+export const M_GOODS = 27;
+export const M_SCREEN = 28;
 
 const G_SPACE = 0;
 const G_DOT = glyph('.');
@@ -73,6 +80,12 @@ export function shade(
     case M_CONCRETE: put(i, G_COLON, r * sh, g * sh, b * sh, 0.28, z, 0); break;
     case M_GLOW: put(i, G_FULL, r, g, b, 0.6, z, 1); break;
     case M_WATER: water(i, u, v, z); break;
+    case M_PLASTER: plaster(i, u, v, z, r, g, b, sh, seed); break;
+    case M_FLOOR: floor(i, u, v, z, r, g, b, seed); break;
+    case M_CEILING: ceiling(i, u, v, z, r, g, b); break;
+    case M_WOOD: woodgrain(i, v, z, r, g, b, sh); break;
+    case M_GOODS: goods(i, u, v, z, seed); break;
+    case M_SCREEN: screen(i, u, v, z, r, g, b); break;
     default: put(i, G_QMARK, 255, 0, 255, 0.5, z, 0);
   }
 }

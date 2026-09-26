@@ -33,6 +33,7 @@ const G_TILDE = glyph('~');
 const G_o = glyph('o');
 const G_STAR = glyph('*');
 const G_AT = glyph('@');
+const G_E = glyph('E');
 const G_DARK = glyph('▓');
 const G_FULL = glyph('█');
 const ARROWS = ['^', '/', '>', '\\', 'v', '/', '<', '\\'].map((c) => glyph(c));
@@ -108,6 +109,7 @@ export function drawMap(fb: FrameBuffer, world: World, v: MapView, yaw: number, 
     else if (car.kind === KIND_POLICE) mark(cell[0], cell[1], G_STAR, 120, 160, 255);
     else mark(cell[0], cell[1], G_o, car.r * 0.6 + 100, car.g * 0.6 + 100, car.b * 0.6 + 100);
   }
+  entrances(world, v, n);
   player(v, n, yaw, time);
   frame(v);
 }
@@ -196,6 +198,23 @@ function shuttles(world: World, v: MapView, n: Inner): void {
   }
 }
 
+/** Doors you can walk through, for blocks already generated (the map never generates city on its own). */
+function entrances(world: World, v: MapView, n: Inner): void {
+  const halfW = (n.w / 2) * v.mpc, halfH = (n.h / 2) * n.mpr;
+  const i0 = Math.floor((v.cx - halfW) / P), i1 = Math.floor((v.cx + halfW) / P);
+  const j0 = Math.floor((v.cz - halfH) / P), j1 = Math.floor((v.cz + halfH) / P);
+  for (let i = i0; i <= i1; i++) {
+    for (let j = j0; j <= j1; j++) {
+      const b = world.city.peek(i, j);
+      if (!b) continue;
+      for (const it of b.interiors) {
+        const cell = toCell(v, n, it.door.x, it.door.z);
+        if (cell) set(cell[0], cell[1], G_E, 255, 255, 255, 90, 60, 10);
+      }
+    }
+  }
+}
+
 function player(v: MapView, n: Inner, yaw: number, time: number): void {
   const cell = toCell(v, n, v.cx, v.cz);
   if (!cell) return;
@@ -238,6 +257,6 @@ function frame(v: MapView): void {
     text(c + 2, y1, ` ${h.name} `, FRAME, FRAME_BG);
     c += h.name.length + 5;
   }
-  const key = ' o car  o taxi  # monorail  @ you ';
+  const key = ' o car  o taxi  # monorail  E entrance  @ you ';
   if (c + key.length < x1) text(c, y1, key, FRAME, FRAME_BG);
 }

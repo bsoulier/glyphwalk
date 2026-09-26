@@ -5,8 +5,10 @@ import {
   gableRoof, jitter, pick, sideOf, streetSides, wallSign,
 } from '../build';
 import { BOX_DEFAULT, BOX_SIDES, BOX_TOP } from '../faces';
+import { CONTROL, HALL } from '../furniture';
+import { enterable } from '../interior';
 import { KIND_CITY } from '../layout';
-import { DOCK_SIGNS, SIGNS_DOCKS, type RGB } from '../signs';
+import { DOCK_SIGNS, SIGNS_DOCKS, TEXT_OFFICE, type RGB } from '../signs';
 
 const METAL: readonly RGB[] = [[92, 102, 112], [122, 74, 58], [72, 98, 88], [140, 132, 112], [64, 74, 94]];
 const CONTAINERS: readonly RGB[] = [[40, 90, 170], [170, 52, 42], [220, 120, 40], [62, 130, 72], [122, 122, 128], [200, 170, 50]];
@@ -42,14 +44,22 @@ function warehouse(B: Builder, r: Rect, lot: Rect): void {
   const c = jitter(rng, pick(rng, METAL), 0.1);
   const id = Math.floor(rng() * 4096);
   const seed = facadeSeed(F_METAL, 0, Math.floor(rng() * 8), 1, id);
-  faces.box(r.x0, 0, r.z0, r.x1, h, r.z1, M_WALL, c[0], c[1], c[2], seed, M_ROOF, BOX_SIDES);
+  const street = streetSides(r, lot);
+  if (street.length > 0 && B.alt() < 0.5) {
+    enterable(B, {
+      rect: r, side: street[Math.floor(B.alt() * street.length)], h, mat: M_WALL, color: c, seed, capMat: M_ROOF, mask: BOX_SIDES,
+      doorW: 1.6, label: 'WAREHOUSE', sign: TEXT_OFFICE, open: false, canopy: true, programs: [HALL, CONTROL, CONTROL], text: -1,
+    });
+  } else {
+    faces.box(r.x0, 0, r.z0, r.x1, h, r.z1, M_WALL, c[0], c[1], c[2], seed, M_ROOF, BOX_SIDES);
+    B.colliders.push(r.x0, r.z0, r.x1, r.z1);
+  }
   const roll = rng();
   if (roll < 0.45) sawtooth(B, r, h, c, seed, facadeSeed(F_GLASS, 0, 3, 1, id));
   else if (roll < 0.8) {
     const alongX = r.x1 - r.x0 > r.z1 - r.z0;
     gableRoof(faces, r, h, 2.4, alongX, 0.3, M_TILES, [c[0] * 0.7, c[1] * 0.7, c[2] * 0.7], 0, M_WALL, c, seed);
   } else faces.box(r.x0, h - 0.01, r.z0, r.x1, h, r.z1, M_ROOF, c[0], c[1], c[2], 0, M_ROOF, BOX_TOP);
-  B.colliders.push(r.x0, r.z0, r.x1, r.z1);
   B.maxH = Math.max(B.maxH, h + 3);
 
   if (rng() < 0.25) waterTower(B, r.x0 + 4, r.z0 + 4, h + 2.4);

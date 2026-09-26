@@ -5,8 +5,10 @@ import {
   bladeSign, hipRoof, jitter, lanterns, perimeterLots, pick, sideOf, streetTrees, tree, wallSign,
 } from '../build';
 import { BOX_DEFAULT, BOX_SIDES } from '../faces';
+import { TATAMI, shopFor } from '../furniture';
+import { enterable } from '../interior';
 import { HALF, KIND_PARK, KIND_PLAZA, P, hasPond } from '../layout';
-import { NEON, SIGNS_JAPAN, type RGB } from '../signs';
+import { NEON, SIGNS_JAPAN, SIGN_TEXTS, TEXT_HOTEL, type RGB } from '../signs';
 
 const WOOD: readonly RGB[] = [[92, 58, 40], [74, 48, 36], [112, 72, 46], [60, 44, 38]];
 const PLASTER: readonly RGB[] = [[190, 180, 160], [165, 155, 140], [150, 160, 165]];
@@ -26,7 +28,10 @@ export function buildJapantown(B: Builder, i: number, j: number, kind: number, l
   if (kind === KIND_PARK) return garden(B, i, j, lot);
 
   const { rng } = B;
-  for (const L of perimeterLots(rng, lot, 12, 5, 9)) shophouse(B, L);
+  let inn = B.alt() < 0.35;
+  for (const L of perimeterLots(rng, lot, 12, 5, 9)) {
+    if (shophouse(B, L, inn)) inn = false;
+  }
   const courtyard = Math.min(lot.x1 - lot.x0, lot.z1 - lot.z0) - 24;
   if (courtyard >= 10 && rng() < 0.3) pagoda(B, bx + HALF, bz + HALF, Math.min(10, courtyard - 2), 3);
   if (rng() < 0.3) {
@@ -39,7 +44,8 @@ export function buildJapantown(B: Builder, i: number, j: number, kind: number, l
   if (rng() < 0.35) streetTrees(B, bx, bz, TREE_CHERRY, 0.8, [24, 40]);
 }
 
-function shophouse(B: Builder, L: Lot): void {
+/** Returns true when this shophouse became the block's inn. */
+function shophouse(B: Builder, L: Lot, inn: boolean): boolean {
   const { rng, faces } = B;
   const floors = 2 + Math.floor(rng() * 5);
   const h = floors * FLOOR_H[F_WOOD] + 0.4;
@@ -49,8 +55,6 @@ function shophouse(B: Builder, L: Lot): void {
   const lit = 3 + Math.floor(rng() * 5);
   const seed = wood ? facadeSeed(F_WOOD, Math.floor(rng() * 3), lit, 1, id) : facadeSeed(F_GENERIC, 3, lit, 1, id);
   const hip = floors <= 3 && rng() < 0.6;
-  faces.box(L.x0, 0, L.z0, L.x1, h, L.z1, M_WALL, c[0], c[1], c[2], seed, M_ROOF, hip ? BOX_SIDES : BOX_DEFAULT);
-  B.colliders.push(L.x0, L.z0, L.x1, L.z1);
   B.maxH = Math.max(B.maxH, h + 2);
   if (hip) {
     const half = Math.min(L.x1 - L.x0, L.z1 - L.z0) / 2;
@@ -60,9 +64,30 @@ function shophouse(B: Builder, L: Lot): void {
     B.props.box(cx - 1, h, cz - 1, cx + 1, h + 2.2, cz + 1, M_CORRUGATED, 120, 110, 95, 0);
   }
   const s = sideOf(L, L.side);
-  if (floors >= 2 && rng() < 0.6) bladeSign(B, s, 0.8 + rng() * (s.len - 1.6), 3.2, SIGNS_JAPAN, NEON, h - 3.4);
+  let text = -1;
+  if (floors >= 2 && rng() < 0.6) text = bladeSign(B, s, 0.8 + rng() * (s.len - 1.6), 3.2, SIGNS_JAPAN, NEON, h - 3.4);
   if (rng() < 0.6) lanterns(B, s, 2.9, 1.6);
-  if (floors >= 3 && rng() < 0.2) wallSign(B, s, SIGNS_JAPAN, NEON, 3.4, 1);
+  if (floors >= 3 && rng() < 0.2) {
+    const t = wallSign(B, s, SIGNS_JAPAN, NEON, 3.4, 1);
+    if (text < 0) text = t;
+  }
+
+  const shop = shopFor(text);
+  const base = { rect: L, side: L.side, h, mat: M_WALL, color: c, seed, capMat: M_ROOF, mask: hip ? BOX_SIDES : BOX_DEFAULT };
+  if (inn && !shop && floors >= 3) {
+    enterable(B, {
+      ...base, doorW: 1.6, label: 'RYOKAN', sign: text >= 0 ? -1 : TEXT_HOTEL, open: false, canopy: true,
+      programs: [TATAMI, TATAMI, TATAMI], text: -1,
+    });
+    return true;
+  }
+  if (shop && B.alt() < 0.7) {
+    enterable(B, { ...base, doorW: 1.5, label: SIGN_TEXTS[text], sign: -1, open: true, canopy: false, programs: [shop, null, null], text });
+    return false;
+  }
+  faces.box(L.x0, 0, L.z0, L.x1, h, L.z1, M_WALL, c[0], c[1], c[2], seed, M_ROOF, hip ? BOX_SIDES : BOX_DEFAULT);
+  B.colliders.push(L.x0, L.z0, L.x1, L.z1);
+  return false;
 }
 
 /** Stacked tiers, each with wide overhanging eaves; every roof's top ring is exactly the next tier's footprint. */

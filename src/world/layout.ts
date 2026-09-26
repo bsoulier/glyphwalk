@@ -13,6 +13,8 @@ export const LAMP_H = 5.4;
 export const TREE_OFF = 9.4;
 export const RAIL_Y = 11;
 export const RAIL_TOP = RAIL_Y + 1.2;
+/** Eye height of a person on foot; doors and interiors are sized around it. */
+export const EYE_H = 1.7;
 
 export const KIND_CITY = 0;
 export const KIND_PARK = 1;

@@ -21,6 +21,39 @@ export function facadeSeed(facade: number, style: number, lit: number, warm: num
   return (style & 3) | ((lit & 7) << 2) | ((warm & 1) << 5) | ((id & 4095) << 6) | ((facade & 7) << 18);
 }
 
+/** Window opening inside one bay of one storey, as fractions of the bay: u0, u1, v0, v1. */
+export type WinRect = readonly [number, number, number, number];
+
+export interface FacadeWindows {
+  colW: number;
+  /** Shop-floor openings, or null when the ground floor has none. */
+  ground: WinRect | null;
+  upper: WinRect;
+}
+
+const COL_W = [2.6, 3.4, 1.8, 2.2];
+const GENERIC_WIN: readonly WinRect[] = [[0.22, 0.78, 0.3, 0.85], [0, 1, 0.35, 0.8], [0.3, 0.7, 0.12, 1], [0.3, 0.7, 0.42, 0.76]];
+
+/**
+ * Where each facade draws its windows. The shaders below test against these same rectangles, and
+ * interiors cut their wall openings from them, so looking out of a window lines up with the facade.
+ */
+export function facadeWindows(seed: number): FacadeWindows {
+  const style = seed & 3;
+  switch ((seed >> 18) & 7) {
+    case F_GLASS: return { colW: 1.6, ground: [0.03, 1, 0.06, 1], upper: [0.03, 1, 0.06, 1] };
+    case F_BRICK: return { colW: 2.4, ground: [0.2, 0.8, 0, 0.72], upper: [0.3, 0.7, 0.25, 0.8] };
+    case F_STONE: return { colW: 2.3, ground: [0.14, 0.86, 0, 0.86], upper: [0.3, 0.7, 0.06, 0.88] };
+    case F_WOOD: return { colW: 1.8, ground: [0.1, 0.9, 0, 0.75], upper: [0.2, 0.8, 0.3, 0.82] };
+    case F_METAL: return { colW: 6, ground: null, upper: [0, 0.5, 0.55, 0.85] };
+    default: return { colW: COL_W[style], ground: [0.08, 0.92, 0.06, 0.72], upper: GENERIC_WIN[style] };
+  }
+}
+
+function inWin(w: WinRect, lu: number, lv: number): boolean {
+  return lu > w[0] && lu < w[1] && lv > w[2] && lv < w[3];
+}
+
 const G_SPACE = 0;
 const G_DOT = glyph('.');
 const G_COLON = glyph(':');
@@ -37,7 +70,10 @@ const G_FULL = glyph('█');
 const G_DARK = glyph('▓');
 const G_MED = glyph('▒');
 const WIN_GLYPH = [G_HASH, G_EQ, G_DARK, G_O];
-const COL_W = [2.6, 3.4, 1.8, 2.2];
+const GROUND_GENERIC: WinRect = [0.08, 0.92, 0.06, 0.72];
+const W_BRICK = facadeWindows(F_BRICK << 18);
+const W_STONE = facadeWindows(F_STONE << 18);
+const W_WOOD = facadeWindows(F_WOOD << 18);
 
 const SHOP: readonly (readonly [number, number, number])[] = [
   [255, 170, 90], [255, 110, 190], [120, 240, 220], [255, 230, 140],
@@ -103,14 +139,7 @@ function generic(i: number, u: number, v: number, z: number, r: number, g: numbe
 
   if (cellsU >= 2.2 && cellsV >= 2) {
     const lu = fu - cu, lv = fv - cv;
-    let win: boolean;
-    if (cv === 0) win = lu > 0.08 && lu < 0.92 && lv > 0.06 && lv < 0.72;
-    else if (style === 0) win = lu > 0.22 && lu < 0.78 && lv > 0.3 && lv < 0.85;
-    else if (style === 1) win = lv > 0.35 && lv < 0.8;
-    else if (style === 2) win = lu > 0.3 && lu < 0.7 && lv > 0.12;
-    else win = lu > 0.3 && lu < 0.7 && lv > 0.42 && lv < 0.76;
-
-    if (win) {
+    if (inWin(cv === 0 ? GROUND_GENERIC : GENERIC_WIN[style], lu, lv)) {
       const h = hash3(seed, cu, cv);
       if (cv === 0) shopWindow(i, u, v, z, h);
       else if ((h & 1023) < litP) {
@@ -182,14 +211,15 @@ function brick(i: number, u: number, v: number, z: number, r: number, g: number,
   const k = sh * 0.88;
   if (cellsU >= 2.2 && cellsV >= 2) {
     const lu = fu - cu, lv = fv - cv;
+    const up = W_BRICK.upper;
     if (cv === 0) {
-      if (lu > 0.2 && lu < 0.8 && lv < 0.72) {
+      if (inWin(W_BRICK.ground as WinRect, lu, lv)) {
         if (hash3(seed, cu, 0) & 1) put(i, G_MED, 255, 190, 110, 0.45, z, 1);
         else put(i, G_PIPE, 96, 64, 42, 0.55, z, 0);
         return;
       }
-    } else if (lv > 0.25 && lv < 0.8) {
-      if (lu > 0.3 && lu < 0.7) {
+    } else if (lv > up[2] && lv < up[3]) {
+      if (lu > up[0] && lu < up[1]) {
         const h = hash3(seed, cu, cv);
         if ((h & 1023) < litP) put(i, G_PLUS, 255, 200, 120, 0.4, z, 1);
         else put(i, G_DOT, 30, 32, 40, 0.55, z, 0);
@@ -224,7 +254,7 @@ function stone(i: number, u: number, v: number, z: number, r: number, g: number,
   if (cellsU >= 2.2 && cellsV >= 2) {
     const lu = fu - cu, lv = fv - cv;
     if (cv === 0) {
-      if (lu > 0.14 && lu < 0.86 && lv < 0.86) {
+      if (inWin(W_STONE.ground as WinRect, lu, lv)) {
         const h = hash3(seed, cu, 0);
         if ((h & 3) !== 0) put(i, G_MED, 255, 205, 130, 0.45, z, 1);
         else put(i, G_DOT, 34, 32, 36, 0.5, z, 0);
@@ -239,7 +269,7 @@ function stone(i: number, u: number, v: number, z: number, r: number, g: number,
       put(i, G_EQ, 46, 46, 52, 0.2, z, 0);
       return;
     }
-    if (lu > 0.3 && lu < 0.7 && lv > 0.06 && lv < 0.88) {
+    if (inWin(W_STONE.upper, lu, lv)) {
       const h = hash3(seed, cu, cv);
       if ((h & 1023) < litP) {
         const q = 0.75 + ((h >>> 10) & 63) / 250;
@@ -263,13 +293,13 @@ function wood(i: number, u: number, v: number, z: number, r: number, g: number, 
   const k = sh * 0.9;
   if (cellsU >= 2.2 && cellsV >= 2) {
     const lu = fu - cu, lv = fv - cv;
-    if (cv === 0 && lu > 0.1 && lu < 0.9 && lv < 0.75) {
+    if (cv === 0 && inWin(W_WOOD.ground as WinRect, lu, lv)) {
       const h = hash3(seed, cu, 0);
       if ((h & 3) !== 0) put(i, G_MED, 255, 140, 90, 0.5, z, 1);
       else put(i, G_PIPE, 60, 30, 30, 0.5, z, 0);
       return;
     }
-    if (lu > 0.2 && lu < 0.8 && lv > 0.3 && lv < 0.82) {
+    if (inWin(W_WOOD.upper, lu, lv)) {
       const lit = (hash3(seed, cu, cv) & 1023) < litP;
       const cpmU = fxC / z, cpmV = fyC / z;
       const gu = u / 0.45, gv = v / 0.45;

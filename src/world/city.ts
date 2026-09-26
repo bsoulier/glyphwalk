@@ -11,6 +11,7 @@ import { buildDowntown } from './styles/downtown';
 import { buildJapantown } from './styles/japantown';
 import { buildOldTown } from './styles/oldtown';
 import { buildParis } from './styles/paris';
+import type { Interior } from './interior';
 import { isRailRow } from './train';
 
 /** x, y0, y1, z, halfWidth, r, g, b, glyph, material */
@@ -28,6 +29,8 @@ export interface Block {
   poles: Float32Array;
   lights: Float32Array;
   colliders: Float32Array;
+  levelColliders: Float32Array;
+  interiors: Interior[];
   cx: number;
   cy: number;
   cz: number;
@@ -102,18 +105,36 @@ export class City {
     return out;
   }
 
-  collides(x: number, z: number, r: number): boolean {
+  /** Cached block, without generating it (for overlays that must not stall on unseen areas). */
+  peek(i: number, j: number): Block | undefined {
+    return this.cache.get(key(i, j));
+  }
+
+  /** `feet` is the height the walker stands at, so furniture only blocks the storey it sits on. */
+  collides(x: number, z: number, r: number, feet = 0): boolean {
     const i0 = Math.floor((x - r) / P), i1 = Math.floor((x + r) / P);
     const j0 = Math.floor((z - r) / P), j1 = Math.floor((z + r) / P);
     for (let i = i0; i <= i1; i++) {
       for (let j = j0; j <= j1; j++) {
-        const c = this.get(i, j).colliders;
+        const b = this.get(i, j);
+        const c = b.colliders;
         for (let o = 0; o < c.length; o += 4) {
           if (x + r > c[o] && x - r < c[o + 2] && z + r > c[o + 1] && z - r < c[o + 3]) return true;
+        }
+        const l = b.levelColliders;
+        for (let o = 0; o < l.length; o += 6) {
+          if (feet >= l[o + 4] && feet < l[o + 5] && x + r > l[o] && x - r < l[o + 2] && z + r > l[o + 1] && z - r < l[o + 3]) return true;
         }
       }
     }
     return false;
+  }
+
+  interiorAt(x: number, z: number): Interior | null {
+    for (const it of this.get(Math.floor(x / P), Math.floor(z / P)).interiors) {
+      if (x > it.x0 && x < it.x1 && z > it.z0 && z < it.z1) return it;
+    }
+    return null;
   }
 }
 
@@ -123,12 +144,15 @@ export function generateBlock(i: number, j: number): Block {
   const hood = hoodAt(i, j);
   const B: Builder = {
     rng: mulberry32(hash3(i, j, worldSeed)),
+    alt: mulberry32(hash3(i, j, worldSeed ^ 0xd00d)),
     hood,
     faces: new FaceList(),
     props: new FaceList(),
     poles: [],
     lights: [],
     colliders: [],
+    levelColliders: [],
+    interiors: [],
     maxH: 7,
   };
   const lot: Rect = {
@@ -155,6 +179,8 @@ export function generateBlock(i: number, j: number): Block {
     poles: new Float32Array(B.poles),
     lights: new Float32Array(B.lights),
     colliders: new Float32Array(B.colliders),
+    levelColliders: new Float32Array(B.levelColliders),
+    interiors: B.interiors,
     cx: bx + half,
     cy: B.maxH / 2,
     cz: bz + half,
