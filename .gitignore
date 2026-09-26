@@ -1,3 +1,7 @@
 node_modules
 dist
 .DS_Store
+
+# Test output
+test-results
+playwright-report

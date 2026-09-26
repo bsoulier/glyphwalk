@@ -188,7 +188,7 @@ function q15(c: number): number {
  * Median cut over the 15-bit histogram: keep splitting the busiest box along its widest channel at the
  * pixel-weighted median. Every histogram bin maps to the palette entry of the box it ended up in.
  */
-function medianCut(hist: Uint32Array, maxColors: number): { palette: Uint8Array; lut: Uint8Array } {
+export function medianCut(hist: Uint32Array, maxColors: number): { palette: Uint8Array; lut: Uint8Array } {
   const used: number[] = [];
   for (let k = 0; k < hist.length; k++) if (hist[k] > 0) used.push(k);
   const ch = (k: number, c: number) => (k >> (10 - c * 5)) & 31;
@@ -265,7 +265,7 @@ class Bytes {
 }
 
 /** GIF89a with a 256-colour global table, looping forever. */
-class GifWriter {
+export class GifWriter {
   private readonly b = new Bytes();
 
   constructor(private readonly w: number, private readonly h: number, palette: Uint8Array) {

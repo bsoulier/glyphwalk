@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { createHash } from 'node:crypto';
 import { readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
@@ -66,4 +67,8 @@ export default defineConfig({
   // Relative asset URLs, so the build works from any folder (e.g. a GitHub Pages project path).
   base: './',
   plugins: [offline()],
+  test: {
+    include: ['tests/unit/**/*.test.ts'],
+    environment: 'node',
+  },
 });

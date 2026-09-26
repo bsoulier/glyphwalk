@@ -88,6 +88,11 @@ export class Market {
     if (this.open ? lamps < 0.35 : lamps > 0.55) this.open = !this.open;
   }
 
+  /** The stalls of block (i, j), whether or not the market is open. */
+  stallsIn(i: number, j: number): readonly Stall[] {
+    return this.block(i, j).stalls;
+  }
+
   private block(i: number, j: number): BlockMarket {
     const k = `${i},${j}`;
     let m = this.cache.get(k);
