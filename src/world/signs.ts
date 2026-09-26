@@ -6,7 +6,11 @@ export const SIGN_TEXTS: readonly string[] = [
   'BRASSERIE', 'BOULANGERIE', 'PHARMACIE', 'BISTRO', 'LIBRAIRIE', 'FROMAGERIE', 'TABAC', 'PATISSERIE',
   'TAVERN', 'BAKERY', 'INN', 'APOTHECARY', 'CANDLES', 'ANTIQUES', 'BUTCHER', 'CLOCKS',
   'DOCK 7', 'FREIGHT', 'CUSTOMS', 'BONDED', 'PIER 3', 'GATE B',
+  'STOP', 'WALK',
 ];
+
+export const TEXT_STOP = SIGN_TEXTS.indexOf('STOP');
+export const TEXT_WALK = SIGN_TEXTS.indexOf('WALK');
 
 function signSet(...words: string[]): readonly number[] {
   return words.map((w) => {
@@ -42,7 +46,11 @@ export const NEON: readonly RGB[] = [
 export const WARM_SIGNS: readonly RGB[] = [[255, 210, 120], [255, 235, 190], [240, 180, 90]];
 export const DOCK_SIGNS: readonly RGB[] = [[255, 160, 60], [200, 220, 255], [255, 220, 90]];
 
-/** seed = text | flicker << 8 | (scale - 1) << 11 */
+/** Sign sizes relative to a shop sign; the small ones are pedestrian signal plates. */
+export const SIGN_SCALES: readonly number[] = [1, 2, 3, 4, 0.5, 0.25];
+
+/** seed = text | flicker << 8 | scale index << 11. Flicker 0 buzzes at random; any other value is steady. */
 export function signSeed(text: number, flicker: number, scale: number): number {
-  return text | ((flicker & 7) << 8) | (((scale - 1) & 3) << 11);
+  const k = Math.max(0, SIGN_SCALES.indexOf(scale));
+  return text | ((flicker & 7) << 8) | (k << 11);
 }

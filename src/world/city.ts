@@ -11,6 +11,7 @@ import { buildDowntown } from './styles/downtown';
 import { buildJapantown } from './styles/japantown';
 import { buildOldTown } from './styles/oldtown';
 import { buildParis } from './styles/paris';
+import { isRailRow } from './train';
 
 /** x, y0, y1, z, halfWidth, r, g, b, glyph, material */
 export const POLE_STRIDE = 10;
@@ -144,7 +145,7 @@ export function generateBlock(i: number, j: number): Block {
     default: buildDowntown(B, i, j, kind, lot);
   }
   streetLamps(B, bx, bz, HOODS[hood]);
-  if (j === 0) addMonorail(B, bx);
+  if (isRailRow(j)) addMonorail(B, bx, bz);
 
   const half = P / 2;
   return {
@@ -163,11 +164,12 @@ export function generateBlock(i: number, j: number): Block {
   };
 }
 
-function addMonorail(B: Builder, bx: number): void {
-  B.faces.box(bx, RAIL_Y, -1.2, bx + P, RAIL_Y + 1.2, 1.2, M_RAIL, 96, 102, 116, 0, M_RAIL, BOX_S | BOX_N | BOX_TOP | BOX_BOTTOM);
+/** Beam over the centre line of the road along the block's south edge, on two pillars. */
+function addMonorail(B: Builder, bx: number, bz: number): void {
+  B.faces.box(bx, RAIL_Y, bz - 1.2, bx + P, RAIL_Y + 1.2, bz + 1.2, M_RAIL, 96, 102, 116, 0, M_RAIL, BOX_S | BOX_N | BOX_TOP | BOX_BOTTOM);
   for (const px of [bx + 16, bx + 48]) {
-    B.faces.box(px - 0.6, 0, -0.6, px + 0.6, RAIL_Y, 0.6, M_RAIL, 80, 84, 96, 0, M_RAIL, BOX_SIDES);
-    B.colliders.push(px - 0.6, -0.6, px + 0.6, 0.6);
+    B.faces.box(px - 0.6, 0, bz - 0.6, px + 0.6, RAIL_Y, bz + 0.6, M_RAIL, 80, 84, 96, 0, M_RAIL, BOX_SIDES);
+    B.colliders.push(px - 0.6, bz - 0.6, px + 0.6, bz + 0.6);
   }
   B.maxH = Math.max(B.maxH, RAIL_Y + 2);
 }

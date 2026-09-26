@@ -16,14 +16,16 @@ export interface Hood {
   weight: number;
   lamp: RGB;
   lampH: number;
+  /** Colour of the district on the map. */
+  map: RGB;
 }
 
 export const HOODS: readonly Hood[] = [
-  { name: 'DOWNTOWN', weight: 3, lamp: [215, 228, 255], lampH: 5.4 },
-  { name: 'JAPANTOWN', weight: 2, lamp: [255, 170, 120], lampH: 5.0 },
-  { name: 'OLD TOWN', weight: 2, lamp: [255, 180, 90], lampH: 4.2 },
-  { name: 'LE MARAIS', weight: 2, lamp: [255, 215, 150], lampH: 5.0 },
-  { name: 'DOCKLANDS', weight: 1, lamp: [255, 140, 50], lampH: 6.5 },
+  { name: 'DOWNTOWN', weight: 3, lamp: [215, 228, 255], lampH: 5.4, map: [90, 140, 220] },
+  { name: 'JAPANTOWN', weight: 2, lamp: [255, 170, 120], lampH: 5.0, map: [230, 80, 90] },
+  { name: 'OLD TOWN', weight: 2, lamp: [255, 180, 90], lampH: 4.2, map: [220, 140, 70] },
+  { name: 'LE MARAIS', weight: 2, lamp: [255, 215, 150], lampH: 5.0, map: [225, 210, 150] },
+  { name: 'DOCKLANDS', weight: 1, lamp: [255, 140, 50], lampH: 6.5, map: [70, 180, 170] },
 ];
 
 const PICK: number[] = [];

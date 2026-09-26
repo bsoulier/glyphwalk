@@ -126,6 +126,14 @@ function markings(
   const s = onX ? sx : sz;
   const along = onX ? lz : lx;
   const cross = onX ? az : ax;
+  // Stop line across the approach lane only (right-hand traffic arrives on the right of the centre line).
+  const toward = onX ? sz : sx;
+  const approach = onX ? s * toward < 0 : s * toward > 0;
+  const sw = fp * 0.5 > 0.25 ? fp * 0.5 : 0.25;
+  if (approach && Math.abs(cross - 10.05) < sw) {
+    GL = G_EQ; R = 200; G = 200; B = 196; BK = 0.3;
+    return;
+  }
   if (hood !== H_DOCKS && cross < ROAD_HALF + 3.6) {
     if (fp < 0.9) {
       if ((Math.floor((s + ROAD_HALF) / 0.9) & 1) === 0) {

@@ -2,7 +2,9 @@ import type { Camera } from '../render/camera';
 import type { Input } from './input';
 import type { World } from '../world/world';
 import type { Vehicle } from '../world/traffic';
+import { HOOD_BLOCKS, hoodAt } from '../world/hoods';
 import { P, RAIL_TOP } from '../world/layout';
+import { REGION, TRAIN_LEN } from '../world/train';
 
 export const MODES = ['walk', 'fly', 'cctv', 'taxi', 'sky', 'rail'] as const;
 export type Mode = (typeof MODES)[number];
@@ -34,6 +36,11 @@ export class Player {
   private lookPitch = 0;
   private target = 0;
   private bob = 0;
+  /** District the current camera mode is tied to: cameras, rides and the shuttle all stay inside it. */
+  private home = 0;
+  private railRi = 0;
+  private railRj = 0;
+  private railDir = 0;
   readonly cctv = { x: 0, y: 8, z: 0, yaw: 0, pitch: -0.25, t: 0, id: 1 };
   onCut: (() => void) | null = null;
 
@@ -43,14 +50,30 @@ export class Player {
     return null;
   }
 
+  private hoodHere(): number {
+    return hoodAt(Math.floor(this.x / P), Math.floor(this.z / P));
+  }
+
+  private leaveRide(world: World): void {
+    if (this.mode === 'taxi') world.cars.release(this.target);
+    else if (this.mode === 'sky') world.skyCars.release(this.target);
+  }
+
   setMode(mode: Mode, world: World): void {
     if (mode === this.mode) return;
+    this.leaveRide(world);
     this.mode = mode;
+    this.home = this.hoodHere();
     this.lookYaw = 0;
     this.lookPitch = 0;
     if (mode === 'cctv') this.pickCctv();
-    if (mode === 'taxi') this.target = world.cars.nearest(this.x, this.z);
-    if (mode === 'sky') this.target = world.skyCars.nearest(this.x, this.z);
+    if (mode === 'taxi') this.target = world.cars.hail(this.x, this.z, this.home);
+    if (mode === 'sky') this.target = world.skyCars.hail(this.x, this.z, this.home);
+    if (mode === 'rail') {
+      this.railRi = Math.floor(this.x / REGION);
+      this.railRj = Math.floor(Math.floor(this.z / P) / HOOD_BLOCKS);
+      this.railDir = 0;
+    }
     if (mode === 'walk') {
       this.y = EYE;
       if (world.city.collides(this.x, this.z, RADIUS)) {
@@ -62,6 +85,11 @@ export class Player {
     this.onCut?.();
   }
 
+  /** On foot, the player is someone cars stop for. */
+  walker(): { x: number; z: number } | null {
+    return this.mode === 'walk' ? this : null;
+  }
+
   teleport(x: number, z: number, yaw: number, world: World): void {
     this.x = x;
     this.z = z;
@@ -69,6 +97,7 @@ export class Player {
     if (this.mode !== 'fly') this.pitch = 0.02;
     this.lookYaw = 0;
     this.lookPitch = 0;
+    this.home = this.hoodHere();
     if (this.mode === 'walk') this.y = EYE;
     else if (this.mode === 'cctv') this.pickCctv();
     else if (this.mode !== 'fly') {
@@ -85,19 +114,30 @@ export class Player {
 
   next(world: World): void {
     if (this.mode === 'cctv') this.pickCctv();
-    else if (this.mode === 'taxi') this.target = (this.target + 1) % world.cars.list.length;
-    else if (this.mode === 'sky') this.target = (this.target + 1) % world.skyCars.list.length;
+    else if (this.mode === 'taxi') this.target = world.cars.nextIn(this.target, this.home);
+    else if (this.mode === 'sky') this.target = world.skyCars.nextIn(this.target, this.home);
     else return;
     this.lookYaw = 0;
     this.onCut?.();
   }
 
+  /** A camera on a corner of a nearby block of the home district, looking over that corner's crossroads. */
   private pickCctv(): void {
     const c = this.cctv;
-    const ix = (Math.round(this.x / P) + Math.floor(Math.random() * 5) - 2) * P;
-    const iz = (Math.round(this.z / P) + Math.floor(Math.random() * 5) - 2) * P;
-    c.x = ix + (Math.random() < 0.5 ? -8.5 : 8.5);
-    c.z = iz + (Math.random() < 0.5 ? -8.5 : 8.5);
+    const bi0 = Math.floor(this.x / P), bj0 = Math.floor(this.z / P);
+    let bi = bi0, bj = bj0;
+    for (let n = 0; n < 40; n++) {
+      const ti = bi0 + Math.floor(Math.random() * 7) - 3, tj = bj0 + Math.floor(Math.random() * 7) - 3;
+      if (hoodAt(ti, tj) === this.home) {
+        bi = ti;
+        bj = tj;
+        break;
+      }
+    }
+    const east = Math.random() < 0.5 ? 1 : 0, north = Math.random() < 0.5 ? 1 : 0;
+    const ix = (bi + east) * P, iz = (bj + north) * P;
+    c.x = ix + (east ? -8.5 : 8.5);
+    c.z = iz + (north ? -8.5 : 8.5);
     c.y = 5 + Math.random() * 9;
     c.yaw = Math.atan2(ix - c.x, iz - c.z) + (Math.random() - 0.5) * 0.9;
     c.pitch = -0.18 - Math.random() * 0.2;
@@ -153,10 +193,16 @@ export class Player {
       cam.yaw = c.yaw + Math.sin(c.t * 0.32) * 0.3 + this.lookYaw;
       cam.pitch = c.pitch + this.lookPitch;
     } else if (this.mode === 'rail') {
-      cam.x = world.train.x - 1.2;
+      const s = world.rail.shuttle(this.railRi, this.railRj);
+      // At each terminus the driver changes ends, so the view cuts to the other cab.
+      if (s.dir !== this.railDir) {
+        if (this.railDir !== 0) this.onCut?.();
+        this.railDir = s.dir;
+      }
+      cam.x = s.x + s.dir * (TRAIN_LEN / 2 - 1.5);
       cam.y = RAIL_TOP + 2.1;
-      cam.z = 0;
-      cam.yaw = Math.PI / 2 + this.lookYaw;
+      cam.z = s.z;
+      cam.yaw = (s.dir * Math.PI) / 2 + this.lookYaw;
       cam.pitch = this.lookPitch - 0.05;
     } else {
       const v = this.riding(world);

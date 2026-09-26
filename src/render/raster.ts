@@ -1,6 +1,7 @@
 import type { Camera } from './camera';
 import type { FrameBuffer } from './framebuffer';
-import { put, shade } from './materials';
+import { M_SIGN, put, shade } from './materials';
+import { span } from './surface';
 import { FACE_STRIDE } from '../world/faces';
 
 export const stats = { faces: 0, blocks: 0, actors: 0 };
@@ -153,6 +154,9 @@ function rasterTri(a: number, b: number, c: number, mat: number, r: number, g: n
   const a0 = y1 - y2, b0 = x2 - x1;
   const a1 = y2 - y0, b1 = x0 - x2;
   const a2 = y0 - y1, b2 = x1 - x0;
+  const isSign = mat === M_SIGN;
+  const duzdx = (a0 * uz0 + a1 * uz1 + a2 * uz2) * inv;
+  const dizdx = (a0 * iz0 + a1 * iz1 + a2 * iz2) * inv;
 
   for (let yy = minY; yy <= maxY; yy++) {
     const pcy = yy + 0.5, pcx = minX + 0.5;
@@ -167,7 +171,9 @@ function rasterTri(a: number, b: number, c: number, mat: number, r: number, g: n
       if (iz <= depth[idx]) continue;
       depth[idx] = iz;
       const z = 1 / iz;
-      shade(idx, mat, (w0 * uz0 + w1 * uz1 + w2 * uz2) * z, (w0 * vz0 + w1 * vz1 + w2 * vz2) * z, z, r, g, bl, sh, seed);
+      const u = (w0 * uz0 + w1 * uz1 + w2 * uz2) * z;
+      if (isSign) span.du = (duzdx - u * dizdx) * z;
+      shade(idx, mat, u, (w0 * vz0 + w1 * vz1 + w2 * vz2) * z, z, r, g, bl, sh, seed);
     }
   }
 }

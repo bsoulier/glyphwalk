@@ -11,6 +11,12 @@ export let fxC = 1;
 export let fyC = 1;
 export let time = 0;
 
+/**
+ * Change in u per screen column at the cell being shaded. Only filled in for sign faces, whose letters
+ * must land on exactly one cell each even when the sign is seen at a steep angle.
+ */
+export const span = { du: 0 };
+
 export function beginSurface(
   fg: Uint32Array, bg: Uint32Array, fx: number, fy: number, far: number, t: number,
   haze: readonly [number, number, number],

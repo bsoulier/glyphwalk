@@ -2,9 +2,9 @@ import { glyph } from '../core/charset';
 import { hash2, hash3 } from '../core/hash';
 import { fontBits } from '../world/font';
 import {
-  SIGN_BAND_PAD, SIGN_CHAR_W, SIGN_H, SIGN_PAD, SIGN_TEXTS, VSIGN_CHAR_H, VSIGN_PAD,
+  SIGN_BAND_PAD, SIGN_CHAR_W, SIGN_H, SIGN_PAD, SIGN_SCALES, SIGN_TEXTS, VSIGN_CHAR_H, VSIGN_PAD,
 } from '../world/signs';
-import { fxC, fyC, put, time } from './surface';
+import { fxC, fyC, put, span, time } from './surface';
 
 export const F_GENERIC = 0;
 export const F_GLASS = 1;
@@ -366,10 +366,12 @@ function signOn(seed: number): number {
  */
 export function sign(i: number, u: number, v: number, z: number, r: number, g: number, b: number, seed: number): void {
   const ti = (seed & 255) % SIGN_TEXTS.length;
-  const scale = 1 + ((seed >> 11) & 3);
+  const scale = SIGN_SCALES[(seed >> 11) & 7] ?? 1;
   const gls = SIGN_GLYPHS[ti];
   const on = signOn(seed);
-  const cw = (SIGN_CHAR_W * scale * fxC) / z;
+  // Cells per letter as actually projected, which shrinks when the sign is seen from the side.
+  const du = Math.abs(span.du);
+  const cw = du > 1e-6 ? SIGN_CHAR_W / du : (SIGN_CHAR_W * scale * fxC) / z;
   if (cw < 1.1) {
     put(i, G_EQ, r * 0.8 * on, g * 0.8 * on, b * 0.8 * on, 0.35, z, 1);
     return;

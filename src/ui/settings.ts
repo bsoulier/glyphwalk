@@ -7,6 +7,7 @@ export interface Settings {
   scan: boolean;
   rain: boolean;
   hud: boolean;
+  minimap: boolean;
 }
 
 const KEY = 'glyphwalk.settings.v1';
@@ -20,6 +21,7 @@ const DEFAULTS: Settings = {
   scan: true,
   rain: true,
   hud: true,
+  minimap: true,
 };
 
 export function loadSettings(): Settings {

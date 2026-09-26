@@ -7,6 +7,8 @@ export class Input {
   private my = 0;
   private dragging = false;
   locked = false;
+  /** When false, clicks on the canvas are left to the page (e.g. picking a spot on the map). */
+  canLock: () => boolean = () => true;
 
   constructor(canvas: HTMLCanvasElement) {
     window.addEventListener('keydown', (e) => {
@@ -19,6 +21,7 @@ export class Input {
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
     window.addEventListener('blur', () => this.keys.clear());
     canvas.addEventListener('mousedown', () => {
+      if (!this.canLock()) return;
       this.dragging = true;
       if (!this.locked) Promise.resolve(canvas.requestPointerLock()).catch(() => undefined);
     });

@@ -3,7 +3,10 @@ import { drawBoxYaw, drawVLine, sphereVisible, stats } from '../render/raster';
 import { M_CLOTH, M_SKIN } from '../render/materials';
 import { glyph } from '../core/charset';
 import { P } from './layout';
+import { signalPhase, walkWindow } from './signals';
 
+/** Brisk pace on the crosswalk, fast enough to clear the widest crossing within one walk window. */
+const CROSS_SPEED = 2.2;
 const DX = [1, 0, -1, 0];
 const DZ = [0, 1, 0, -1];
 const G_PIPE = glyph('|');
@@ -23,6 +26,10 @@ class Ped {
   speed = 1.3;
   phase = 0;
   crossing = false;
+  /** Standing at the kerb until the signal at intersection (ii, jj) allows the crossing. */
+  waiting = false;
+  ii = 0;
+  jj = 0;
   ax = 0;
   az = 0;
   bx = 0;
@@ -72,11 +79,12 @@ export class Pedestrians {
     p.dir = Math.random() < 0.5 ? 1 : -1;
     p.speed = 1 + Math.random() * 0.7;
     p.crossing = false;
+    p.waiting = false;
     this.locate(p);
   }
 
   private locate(p: Ped): void {
-    if (p.crossing) {
+    if (p.crossing || p.waiting) {
       p.x = p.ax + (p.bx - p.ax) * p.t;
       p.z = p.az + (p.bz - p.az) * p.t;
       return;
@@ -89,20 +97,27 @@ export class Pedestrians {
     p.yaw = Math.atan2(DX[k] * p.dir, DZ[k] * p.dir);
   }
 
-  update(dt: number, cx: number, cz: number, radius: number): void {
+  update(dt: number, cx: number, cz: number, radius: number, time: number): void {
     const r2 = radius * radius;
     for (const p of this.list) {
-      p.phase += p.speed * dt * 5;
       const L = P - 2 * p.off, per = 4 * L;
+      if (p.waiting) {
+        // Only step off the kerb if the whole crossing fits before cars get green.
+        if (walkWindow(signalPhase(p.ii, p.jj, time)) >= (2 * p.off) / CROSS_SPEED) {
+          p.waiting = false;
+          p.crossing = true;
+        }
+      } else p.phase += p.speed * dt * 5;
       if (p.crossing) {
-        p.t += (p.speed * dt) / (2 * p.off);
+        p.phase += (CROSS_SPEED - p.speed) * dt * 5;
+        p.t += (CROSS_SPEED * dt) / (2 * p.off);
         if (p.t >= 1) {
           p.crossing = false;
           p.bi = p.nbi;
           p.bj = p.nbj;
           p.s = p.ns;
         }
-      } else {
+      } else if (!p.waiting) {
         const prevSide = Math.floor(p.s / L);
         p.s += p.dir * p.speed * dt;
         if (Math.floor(p.s / L) !== prevSide) {
@@ -117,7 +132,9 @@ export class Pedestrians {
             p.nbi = p.bi + ddx;
             p.nbj = p.bj + ddz;
             p.ns = p.dir > 0 ? side * L + 0.001 : (side + 1) * L - 0.001;
-            p.crossing = true;
+            p.ii = p.bi + (corner === 1 || corner === 2 ? 1 : 0);
+            p.jj = p.bj + (corner >= 2 ? 1 : 0);
+            p.waiting = true;
             p.t = 0;
             p.yaw = Math.atan2(ddx, ddz);
           }
