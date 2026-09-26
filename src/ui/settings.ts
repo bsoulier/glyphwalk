@@ -1,6 +1,7 @@
 import { SOUND_KINDS, type SoundKind } from '../audio/sound';
 import type { TimeMode } from '../render/daylight';
 import { WEATHERS, type Weather } from '../render/weather';
+import { EVENT_MODES, type EventMode } from '../world/events';
 
 export interface Settings {
   time: TimeMode;
@@ -24,6 +25,8 @@ export interface Settings {
   nerds: boolean;
   /** Zoom step of the full map. */
   mapZoom: number;
+  /** How often fireworks and neon glitches happen. */
+  events: EventMode;
 }
 
 const KEY = 'glyphwalk.settings.v1';
@@ -45,6 +48,7 @@ const DEFAULTS: Settings = {
   station: 0,
   nerds: false,
   mapZoom: 1,
+  events: 'periodic',
 };
 
 export function loadSettings(): Settings {
@@ -57,6 +61,7 @@ export function loadSettings(): Settings {
       delete saved.rain;
       const s = { ...DEFAULTS, ...saved };
       if (!WEATHERS.includes(s.weather)) s.weather = DEFAULTS.weather;
+      if (!EVENT_MODES.includes(s.events)) s.events = DEFAULTS.events;
       if (!Array.isArray(s.soundOff)) s.soundOff = [];
       s.soundOff = s.soundOff.filter((k) => SOUND_KINDS.includes(k));
       return s;

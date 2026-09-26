@@ -2,6 +2,7 @@ import type { Camera } from '../render/camera';
 import { FLOOR_CARPET, FLOOR_CHECKER, FLOOR_CONCRETE, FLOOR_PARQUET, FLOOR_TATAMI, FLOOR_TILES } from '../render/interiors';
 import { H_DOCKS, H_DOWNTOWN, H_JAPAN, H_OLDTOWN, H_PARIS } from '../world/hoods';
 import type { Vehicle } from '../world/traffic';
+import type { EventMode } from '../world/events';
 import { Radio } from './radio';
 
 /** Everything the soundscape needs from one frame; sound never reaches into the game itself. */
@@ -33,6 +34,9 @@ export interface SoundState {
   station: number;
   /** Distance to the nearest open market stall (Infinity if none). */
   market: number;
+  /** How often neon signs fail: 'always' buzzes and snaps at random, 'periodic' only in the brownout. */
+  events: EventMode;
+  brownout: boolean;
 }
 
 interface Voice {
@@ -109,6 +113,7 @@ export class Sound {
   private lastSteps = 0;
   private lastLift = 0;
   private nextChirp = 0;
+  private inBrownout = false;
   private next: Record<string, number> = {};
   private honked = new Map<number, number>();
   private on = true;
@@ -533,8 +538,11 @@ export class Sound {
   /** A signature sound per district, heard outdoors (and muffled through the walls). */
   private district(s: SoundState): void {
     const o = this.outside('ambience');
-    // Neon districts at night: the odd buzz and snap of a failing sign somewhere nearby.
-    if ((s.hood === H_DOWNTOWN || s.hood === H_JAPAN) && s.night > 0.5 && this.every('neon', 5, 13)) this.neonZap(Math.random() * 1.4 - 0.7);
+    // Neon districts at night: the buzz and snap of failing signs, now and then or all at once in a brownout.
+    const neon = (s.hood === H_DOWNTOWN || s.hood === H_JAPAN) && s.night > 0.5;
+    if (neon && s.events === 'always' && this.every('neon', 5, 13)) this.neonZap(Math.random() * 1.4 - 0.7);
+    if (neon && s.brownout && !this.inBrownout) for (let k = 0; k < 4; k++) this.neonZap(Math.random() * 1.6 - 0.8, k * 0.4);
+    this.inBrownout = s.brownout;
     switch (s.hood) {
       case H_JAPAN:
         if (this.every('chime', 4, 10)) this.windChime(Math.random() * 1.2 - 0.6);
@@ -567,10 +575,10 @@ export class Sound {
   }
 
   /** A mains-hum buzz chopped into a few stutters, like a neon tube struggling to strike. */
-  private neonZap(pan: number): void {
+  private neonZap(pan: number, start = 0): void {
     const n = 2 + Math.floor(Math.random() * 4);
     for (let k = 0; k < n; k++) {
-      const delay = k * (0.05 + Math.random() * 0.12);
+      const delay = start + k * (0.05 + Math.random() * 0.12);
       this.tone(120, 0.07 + Math.random() * 0.08, 0.018, this.outside('ambience'), { type: 'sawtooth', delay, pan });
       this.burst('bandpass', 3500, 1.5, 0.03, 0.05, this.outside('ambience'), delay, pan);
     }

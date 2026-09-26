@@ -3,6 +3,7 @@ import { SOUND_KINDS, SOUND_KIND_LABELS, type SoundKind } from '../audio/sound';
 import { TIME_LABELS, TIME_MODES, type TimeMode } from '../render/daylight';
 import { STYLE_NAMES } from '../render/presenter';
 import { WEATHERS, WEATHER_LABELS, type Weather } from '../render/weather';
+import { EVENT_LABELS, EVENT_MODES, type EventMode } from '../world/events';
 import { HOODS } from '../world/hoods';
 import { CELL_PRESETS } from './quality';
 import type { Settings } from './settings';
@@ -22,6 +23,7 @@ export interface HudHandlers {
   onVolume(volume: number): void;
   onSoundKind(kind: SoundKind, on: boolean): void;
   onNerds(on: boolean): void;
+  onEvents(mode: EventMode): void;
 }
 
 const DISTANCES = [120, 180, 260, 400, 600];
@@ -59,6 +61,7 @@ export class Hud {
   private readonly time = $('sel-time') as HTMLSelectElement;
   private readonly weather = $('sel-weather') as HTMLSelectElement;
   private readonly radio = $('sel-radio') as HTMLSelectElement;
+  private readonly events = $('sel-events') as HTMLSelectElement;
   private readonly sound = $('chk-sound') as HTMLInputElement;
   private readonly volume = $('rng-volume') as HTMLInputElement;
   private readonly kindsBox = $('sound-kinds');
@@ -68,6 +71,7 @@ export class Hud {
   constructor(handlers: HudHandlers) {
     fill(this.time, TIME_MODES.map((m): [string, string] => [m, TIME_LABELS[m]]));
     fill(this.weather, WEATHERS.map((w): [string, string] => [w, WEATHER_LABELS[w]]));
+    fill(this.events, EVENT_MODES.map((m): [string, string] => [m, EVENT_LABELS[m]]));
     fill(this.radio, [...STATIONS.map((s, k): [string, string] => [String(k), `${s.name} (${s.genre})`]), [String(RADIO_OFF), 'Off']]);
     fill(this.hood, HOODS.map((h, k): [string, string] => [String(k), h.name]));
     fill(this.cell, [['auto', 'Auto (fit target FPS)'], ...CELL_PRESETS.map((p): [string, string] => [p.id, p.label])]);
@@ -90,6 +94,7 @@ export class Hud {
     bind(this.time, (v) => handlers.onTime(v as TimeMode));
     bind(this.weather, (v) => handlers.onWeather(v as Weather));
     bind(this.radio, (v) => handlers.onRadio(Number(v)));
+    bind(this.events, (v) => handlers.onEvents(v as EventMode));
     const share = $('btn-share');
     share.addEventListener('click', () => {
       share.blur();
@@ -129,6 +134,7 @@ export class Hud {
     this.fov.value = String(s.fov);
     this.style.value = String(s.style);
     this.radio.value = String(s.station);
+    this.events.value = s.events;
     this.sound.checked = s.sound;
     if (document.activeElement !== this.volume) this.volume.value = String(Math.round(s.volume * 100));
     for (const [k, box] of this.kinds) box.checked = !s.soundOff.includes(k);

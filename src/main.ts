@@ -20,6 +20,8 @@ import { RADIO_OFF, STATIONS } from './audio/radio';
 import { inCab, levelAt } from './world/interior';
 import { signalPhase, walkWindow } from './world/signals';
 import { EYE_H, P, setWorldSeed, worldSeed } from './world/layout';
+import { brownoutAt } from './world/events';
+import { setNeon } from './render/facades';
 import { World } from './world/world';
 import { GifRecorder } from './ui/gif';
 import { Hud } from './ui/hud';
@@ -223,6 +225,10 @@ const hud = new Hud({
     persist();
   },
   onNerds: (on) => setNerds(on),
+  onEvents: (mode) => {
+    settings.events = mode;
+    persist();
+  },
 });
 
 function setSound(on: boolean): void {
@@ -589,6 +595,8 @@ function soundFrame(dt: number): void {
     cab: riding(),
     station: settings.station,
     market: world.market.nearest(cam.x, cam.z),
+    events: settings.events,
+    brownout: brownoutAt(settings.events, world.time),
   });
 }
 
@@ -598,12 +606,17 @@ function drawDist(): number {
   return settings.weather === 'fog' ? Math.min(d, FOG_FAR) : d;
 }
 
-/** Launches and bursts over the docks, heard with the right bearing and delay. */
+let fireworksShowing = false;
+
+/** Launches and bursts over the docks, heard with the right bearing and delay; a note when a show starts. */
 function fireworksFrame(dt: number): void {
-  for (const b of world.fireworks.update(dt, world.time, sky.lamps > 0.6, cam)) {
+  const fw = world.fireworks;
+  for (const b of fw.update(dt, world.time, sky.lamps > 0.6, cam, settings.events)) {
     const dx = b.x - cam.x, dz = b.z - cam.z;
     sound.firework(b.kind, Math.sin(Math.atan2(dx, dz) - cam.yaw) * 0.8, Math.hypot(dx, b.y - cam.y, dz));
   }
+  if (fw.showing && !fireworksShowing && settings.events === 'periodic' && !photo.active) toast('Fireworks over the docks!', 3000);
+  fireworksShowing = fw.showing;
 }
 
 let sky = daylightAt(clock.hour, settings.weather);
@@ -733,6 +746,7 @@ function frame(now: number): void {
   const flicker = flash > 0.55 && flash < 0.75 ? 0.2 : flash;
 
   const t0 = performance.now();
+  setNeon(settings.events, brownoutAt(settings.events, world.time));
   const env = {
     time,
     weather: settings.weather,

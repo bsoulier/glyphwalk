@@ -1,5 +1,6 @@
 import { glyph } from '../core/charset';
 import { hash2, hash3 } from '../core/hash';
+import type { EventMode } from '../world/events';
 import { fontBits } from '../world/font';
 import {
   SIGN_BAND_PAD, SIGN_CHAR_W, SIGN_H, SIGN_PAD, SIGN_SCALES, SIGN_TEXTS, VSIGN_CHAR_H, VSIGN_PAD,
@@ -391,26 +392,39 @@ const STUTTER_WINDOW = 5;
 const STUTTER_S = 1.3;
 
 /**
- * Brightness of the whole sign: buzzing ones dip at random, and now and then any street sign (id > 0)
- * loses power, stutters dark with a few blinks, and comes back.
+ * Neon failures: 'always' lets any street sign stutter at random and dead letters blink; 'periodic'
+ * keeps dead letters dark and saves the stuttering for a short brownout; 'off' keeps every sign whole.
+ */
+let neonMode: EventMode = 'periodic';
+let brownout = false;
+
+export function setNeon(mode: EventMode, inBrownout: boolean): void {
+  neonMode = mode;
+  brownout = inBrownout;
+}
+
+/**
+ * Brightness of the whole sign: buzzing ones dip at random, and street signs (id > 0) lose power,
+ * stutter dark with a few blinks, and come back.
  */
 function signOn(seed: number): number {
   if (((seed >> 8) & 7) === 0 && (hash2(seed, Math.floor(time * 7)) & 255) < 60) return 0.25;
-  if (seed >> 14 !== 0) {
+  if (seed >> 14 === 0 || neonMode === 'off') return 1;
+  const stutter = () => ((hash2(seed, Math.floor(time * 20)) & 3) === 0 ? 1 : 0.08);
+  if (brownout) return hash2(seed, 0xb0) % 5 < 2 ? stutter() : 1;
+  if (neonMode === 'always') {
     const w = Math.floor(time / STUTTER_WINDOW);
-    if (hash2(seed ^ 0x3c3, w) % 30 === 0 && time - w * STUTTER_WINDOW < STUTTER_S) {
-      return (hash2(seed, Math.floor(time * 20)) & 3) === 0 ? 1 : 0.08;
-    }
+    if (hash2(seed ^ 0x3c3, w) % 30 === 0 && time - w * STUTTER_WINDOW < STUTTER_S) return stutter();
   }
   return 1;
 }
 
-/** Index of a burnt-out letter (one street sign in twelve has one), or -1. It still blinks on now and then. */
+/** Index of a burnt-out letter (one street sign in twelve has one), or -1. */
 function deadLetter(seed: number, len: number): number {
-  if (seed >> 14 === 0 || len < 3) return -1;
+  if (seed >> 14 === 0 || len < 3 || neonMode === 'off') return -1;
   const h = hash2(seed, 0x51d);
   if (h % 12 !== 0) return -1;
-  if ((hash2(seed, Math.floor(time * 9)) & 15) === 0) return -1;
+  if (neonMode === 'always' && (hash2(seed, Math.floor(time * 9)) & 15) === 0) return -1;
   return (h >>> 8) % len;
 }
 

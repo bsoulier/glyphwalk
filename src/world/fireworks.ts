@@ -1,6 +1,7 @@
 import type { Camera } from '../render/camera';
 import type { FrameBuffer } from '../render/framebuffer';
 import { glyph } from '../core/charset';
+import { type EventMode, fireworksAt } from './events';
 import { HOOD_BLOCKS, H_DOCKS, nearestRegion } from './hoods';
 import { P } from './layout';
 
@@ -19,10 +20,6 @@ const COLORS: readonly (readonly [number, number, number])[] = [
 ];
 const GOLD = [255, 190, 90] as const;
 
-/** Shows run for most of every cycle, ending in a quick-fire finale. */
-const CYCLE_S = 100;
-const SHOW_S = 70;
-const FINALE_S = 9;
 /** Farther than this the show is below the horizon haze anyway. */
 const MAX_DIST = 900;
 
@@ -58,21 +55,23 @@ export class Fireworks {
   private glowK = 0;
   /** Colour the bursts add to the sky, fading quickly. */
   readonly glow: [number, number, number] = [0, 0, 0];
+  /** A show is on and close enough to see. */
+  showing = false;
 
-  /** Returns what happened this frame, for sound. */
-  update(dt: number, time: number, night: boolean, cam: Camera): Bang[] {
+  /** Returns what happened this frame, for sound. `mode` sets how often shows happen (see events.ts). */
+  update(dt: number, time: number, night: boolean, cam: Camera, mode: EventMode): Bang[] {
     const bangs: Bang[] = [];
     const fade = Math.exp(-3 * dt);
     this.glow[0] *= fade; this.glow[1] *= fade; this.glow[2] *= fade;
     this.simulate(dt, bangs);
-    if (dt === 0 || !night) return bangs;
-    const site = this.siteNear(cam);
+    if (dt === 0) return bangs;
+    const show = fireworksAt(mode, time);
+    const site = night && show.on ? this.siteNear(cam) : null;
+    this.showing = site !== null;
     if (!site) return bangs;
-    const t = time % CYCLE_S;
-    if (t > SHOW_S) return bangs;
     this.nextLaunch -= dt;
     if (this.nextLaunch > 0) return bangs;
-    const finale = t > SHOW_S - FINALE_S;
+    const finale = show.finale;
     this.nextLaunch = finale ? 0.08 + Math.random() * 0.18 : 0.5 + Math.random() * 1.1;
     const x = site[0] + (Math.random() - 0.5) * 60, z = site[1] + (Math.random() - 0.5) * 60;
     this.rockets.push({
