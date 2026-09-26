@@ -25,6 +25,7 @@ import { GifRecorder } from './ui/gif';
 import { Hud } from './ui/hud';
 import { PhotoMode } from './ui/photo';
 import { setupPwa } from './ui/pwa';
+import { loadResume, saveResume } from './ui/resume';
 import { shareUrl, viewUrl } from './ui/share';
 import { toast } from './ui/toast';
 import { CATS_PER_HOOD } from './world/cats';
@@ -124,6 +125,22 @@ if (hoodParam) {
   if (k >= 0) goToHood(k);
 }
 
+// Without a link saying where to go, carry on from wherever the last session ended.
+const resumed = params.has('cam') || params.has('mode') || hoodParam ? null : loadResume(worldSeed);
+if (resumed) {
+  player.x = resumed.x;
+  player.y = resumed.y;
+  player.z = resumed.z;
+  player.yaw = resumed.yaw;
+  player.pitch = resumed.pitch;
+  if (resumed.mode !== 'walk') player.setMode(resumed.mode, world);
+  else if (resumed.floor > 0) {
+    player.floorY = resumed.floor;
+    player.y = resumed.floor + EYE_H;
+  }
+  if (!params.has('hour')) clock.hour = resumed.hour;
+}
+
 /** Map clicks land on the nearest sidewalk, facing along that street, so you never arrive inside a building. */
 function jumpTo(X: number, Z: number): void {
   const ix = Math.round(X / P) * P, iz = Math.round(Z / P) * P;
@@ -135,7 +152,13 @@ function jumpTo(X: number, Z: number): void {
 
 const MAP_ZOOMS = [2, 4, 8, 16];
 let fullMap = params.get('map') === 'full';
-let mapZoom = 1;
+let mapZoom = Math.max(0, Math.min(MAP_ZOOMS.length - 1, settings.mapZoom));
+
+function zoomMap(delta: number): void {
+  mapZoom = Math.max(0, Math.min(MAP_ZOOMS.length - 1, mapZoom + delta));
+  settings.mapZoom = mapZoom;
+  persist();
+}
 if (params.get('map') === '0') settings.minimap = false;
 input.canLock = () => !fullMap;
 
@@ -379,7 +402,7 @@ function touchContext(): TouchButton[] {
 canvas.addEventListener('wheel', (e) => {
   if (!fullMap) return;
   e.preventDefault();
-  mapZoom = Math.max(0, Math.min(MAP_ZOOMS.length - 1, mapZoom + (e.deltaY > 0 ? 1 : -1)));
+  zoomMap(e.deltaY > 0 ? 1 : -1);
 }, { passive: false });
 
 let staticT = 0;
@@ -418,11 +441,11 @@ function handleKeys(): void {
         break;
       case 'Equal':
       case 'NumpadAdd':
-        mapZoom = Math.max(0, mapZoom - 1);
+        zoomMap(-1);
         break;
       case 'Minus':
       case 'NumpadSubtract':
-        mapZoom = Math.min(MAP_ZOOMS.length - 1, mapZoom + 1);
+        zoomMap(1);
         break;
       case 'KeyR':
         settings.weather = WEATHERS[(WEATHERS.indexOf(settings.weather) + 1) % WEATHERS.length];
@@ -743,6 +766,17 @@ function frame(now: number): void {
   }
   requestAnimationFrame(frame);
 }
+
+/** During the tour, the spot to resume is where the player was before it started. */
+function saveView(): void {
+  const s = tour.active && tourFrom ? tourFrom : player;
+  saveResume({ x: s.x, y: s.y, z: s.z, yaw: s.yaw, pitch: s.pitch, mode: s.mode, floor: s.floorY, hour: clock.hour, seed: worldSeed });
+}
+setInterval(saveView, 2000);
+window.addEventListener('pagehide', saveView);
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) saveView();
+});
 
 if (params.get('tour') === '1') startTour();
 requestAnimationFrame(frame);

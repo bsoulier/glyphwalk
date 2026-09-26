@@ -22,6 +22,8 @@ export interface Settings {
   station: number;
   /** The "stats for nerds" overlay. */
   nerds: boolean;
+  /** Zoom step of the full map. */
+  mapZoom: number;
 }
 
 const KEY = 'glyphwalk.settings.v1';
@@ -42,6 +44,7 @@ const DEFAULTS: Settings = {
   soundOff: [],
   station: 0,
   nerds: false,
+  mapZoom: 1,
 };
 
 export function loadSettings(): Settings {
