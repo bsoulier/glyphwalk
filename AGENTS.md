@@ -79,6 +79,9 @@ glow (lamps, signs, windows at night).
 - **Commit identity is mandatory:** every commit must be authored and committed as
   `Benjamin Soulier <benjamin.soulier@gmail.com>`. This repository's local git config sets it; check with
   `git log -1 --format='%an <%ae> | %cn <%ce>'` before pushing. Never commit with another identity.
+- **No co-author trailers.** Commit messages must not carry `Co-authored-by:` lines (GitHub would show a second author).
+  Cursor adds one to agent commits unless Cursor Settings > Git & PRs > Attribution is off; this clone also has a local
+  `.git/hooks/commit-msg` that strips it. Check with `git log -1 --format=%B` before pushing.
 - `origin` is <https://github.com/bsoulier/glyphwalk> (public). Only `main` and `gh-pages` exist; do not push other
   branches or tags without being asked.
 - After pushing `main`, publish with `npm run deploy` and check the site (see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)).
