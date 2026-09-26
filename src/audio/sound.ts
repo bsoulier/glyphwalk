@@ -2,6 +2,7 @@ import type { Camera } from '../render/camera';
 import { FLOOR_CARPET, FLOOR_CHECKER, FLOOR_CONCRETE, FLOOR_PARQUET, FLOOR_TATAMI, FLOOR_TILES } from '../render/interiors';
 import { H_DOCKS, H_DOWNTOWN, H_JAPAN, H_OLDTOWN, H_PARIS } from '../world/hoods';
 import type { Vehicle } from '../world/traffic';
+import { Radio } from './radio';
 
 /** Everything the soundscape needs from one frame; sound never reaches into the game itself. */
 export interface SoundState {
@@ -26,6 +27,12 @@ export interface SoundState {
   crossing: boolean;
   /** How dark it is, 0 (day) to 1 (night): birds by day, fewer by night. */
   night: number;
+  /** Riding in a cab (taxi or sky taxi), where the radio plays. */
+  cab: boolean;
+  /** Tuned station, or RADIO_OFF. */
+  station: number;
+  /** Distance to the nearest open market stall (Infinity if none). */
+  market: number;
 }
 
 interface Voice {
@@ -81,6 +88,7 @@ export class Sound {
   private motor!: GainNode;
   private rumble!: GainNode;
   private voices: Voice[] = [];
+  private radio: Radio | null = null;
   private t = 0;
   private lastSteps = 0;
   private lastLift = 0;
@@ -95,8 +103,16 @@ export class Sound {
 
   /** Browsers only start audio from a user gesture; call this from every tap and key press. */
   unlock(): void {
+    if (document.hidden) return;
     if (!this.ctx) this.init();
     else if (this.ctx.state === 'suspended') void this.ctx.resume();
+  }
+
+  /** Silence (and stop the audio clock) while the page is in the background, e.g. after switching apps. */
+  pause(hidden: boolean): void {
+    if (!this.ctx) return;
+    if (hidden) void this.ctx.suspend();
+    else void this.ctx.resume();
   }
 
   setEnabled(on: boolean): void {
@@ -178,6 +194,7 @@ export class Sound {
       engine.start();
       this.voices.push({ filter, gain, pan, engine, engineGain });
     }
+    this.radio = new Radio(ctx, this.indoor, this.noise);
   }
 
   // ---- building blocks ----
@@ -315,6 +332,26 @@ export class Sound {
     this.tone(1980, 0.4, 0.1, this.indoor, { delay: 0.1 });
   }
 
+  /**
+   * A firework event `dist` metres away at bearing `pan`. Sound travels at 343 m/s, so a far burst is
+   * seen a second or two before its boom arrives.
+   */
+  firework(kind: 'launch' | 'burst' | 'crackle', pan: number, dist: number): void {
+    if (!this.ctx || this.ctx.state !== 'running') return;
+    const o = this.outdoor;
+    const delay = dist / 343;
+    const near = 1 / (1 + dist / 90);
+    if (kind === 'launch') {
+      this.burst('lowpass', 300, 0.7, 0.12, 0.2 * near, o, delay, pan);
+      this.tone(900, 1.3, 0.035 * near, o, { to: 2600, delay, pan, attack: 0.2 });
+    } else if (kind === 'burst') {
+      this.burst('lowpass', 170, 0.7, 1.8, 0.75 * near, o, delay, pan);
+      this.burst('bandpass', 1100, 0.6, 0.3, 0.3 * near, o, delay, pan);
+    } else {
+      for (let k = 0; k < 14; k++) this.burst('highpass', 3200, 0.7, 0.018, 0.1 * near, o, delay + 0.7 + Math.random() * 0.9, pan + (Math.random() - 0.5) * 0.3);
+    }
+  }
+
   // ---- per frame ----
 
   update(s: SoundState): void {
@@ -336,6 +373,7 @@ export class Sound {
     this.room(s);
     this.district(s);
     this.ride(s);
+    this.radio?.update(s.cab, s.station);
 
     if (s.crossing && this.t >= this.nextChirp) {
       this.nextChirp = this.t + 0.55;
@@ -413,8 +451,10 @@ export class Sound {
   private room(s: SoundState): void {
     const r = s.room;
     const busy = ['CAFE', 'BAR', 'LOBBY', 'NOODLE BAR', 'BAKERY', 'SKY LOUNGE'].includes(r);
-    this.level(this.murmur, busy ? (r === 'BAR' || r === 'SKY LOUNGE' ? 0.55 : 0.4) : 0);
-    this.level(this.fry, r === 'NOODLE BAR' ? 0.3 : 0);
+    // Out at the night market: chatter and sizzling pans, fading over the length of the stalls.
+    const stalls = !s.indoors && s.mode === 'walk' ? Math.max(0, 1 - s.market / 22) : 0;
+    this.level(this.murmur, Math.max(busy ? (r === 'BAR' || r === 'SKY LOUNGE' ? 0.55 : 0.4) : 0, stalls * 0.45));
+    this.level(this.fry, Math.max(r === 'NOODLE BAR' ? 0.3 : 0, stalls * stalls * 0.22));
     const humming = r === 'OFFICES' || r === 'SHIPPING OFFICE' || r === 'WAREHOUSE' || r === 'SHOP';
     this.level(this.hum, humming ? (r === 'WAREHOUSE' ? 0.5 : 0.25) : s.indoors ? 0.08 : 0);
     if ((r === 'CAFE' || r === 'BAR') && this.every('clink', 2, 7)) this.tone(2800 + Math.random() * 900, 0.3, 0.04, this.indoor);
@@ -437,6 +477,8 @@ export class Sound {
   /** A signature sound per district, heard outdoors (and muffled through the walls). */
   private district(s: SoundState): void {
     const o = this.outdoor;
+    // Neon districts at night: the odd buzz and snap of a failing sign somewhere nearby.
+    if ((s.hood === H_DOWNTOWN || s.hood === H_JAPAN) && s.night > 0.5 && this.every('neon', 5, 13)) this.neonZap(Math.random() * 1.4 - 0.7);
     switch (s.hood) {
       case H_JAPAN:
         if (this.every('chime', 4, 10)) this.windChime(Math.random() * 1.2 - 0.6);
@@ -465,6 +507,16 @@ export class Sound {
           for (let k = 0; k < 4; k++) this.tone(720, 0.5, 0.03, o, { to: 1050, delay: k * 0.55, pan: 0.6 });
         }
         break;
+    }
+  }
+
+  /** A mains-hum buzz chopped into a few stutters, like a neon tube struggling to strike. */
+  private neonZap(pan: number): void {
+    const n = 2 + Math.floor(Math.random() * 4);
+    for (let k = 0; k < n; k++) {
+      const delay = k * (0.05 + Math.random() * 0.12);
+      this.tone(120, 0.07 + Math.random() * 0.08, 0.018, this.outdoor, { type: 'sawtooth', delay, pan });
+      this.burst('bandpass', 3500, 1.5, 0.03, 0.05, this.outdoor, delay, pan);
     }
   }
 

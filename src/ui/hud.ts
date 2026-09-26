@@ -1,3 +1,4 @@
+import { RADIO_OFF, STATIONS } from '../audio/radio';
 import { TIME_LABELS, TIME_MODES, type TimeMode } from '../render/daylight';
 import { STYLE_NAMES } from '../render/presenter';
 import { WEATHERS, WEATHER_LABELS, type Weather } from '../render/weather';
@@ -14,6 +15,8 @@ export interface HudHandlers {
   onStyle(style: number): void;
   onTime(mode: TimeMode): void;
   onWeather(weather: Weather): void;
+  onRadio(station: number): void;
+  onShare(): void;
 }
 
 const DISTANCES = [120, 180, 260, 400, 600];
@@ -48,10 +51,12 @@ export class Hud {
   private readonly style = $('sel-style') as HTMLSelectElement;
   private readonly time = $('sel-time') as HTMLSelectElement;
   private readonly weather = $('sel-weather') as HTMLSelectElement;
+  private readonly radio = $('sel-radio') as HTMLSelectElement;
 
   constructor(handlers: HudHandlers) {
     fill(this.time, TIME_MODES.map((m): [string, string] => [m, TIME_LABELS[m]]));
     fill(this.weather, WEATHERS.map((w): [string, string] => [w, WEATHER_LABELS[w]]));
+    fill(this.radio, [...STATIONS.map((s, k): [string, string] => [String(k), `${s.name} (${s.genre})`]), [String(RADIO_OFF), 'Off']]);
     fill(this.hood, HOODS.map((h, k): [string, string] => [String(k), h.name]));
     fill(this.cell, [['auto', 'Auto (fit target FPS)'], ...CELL_PRESETS.map((p): [string, string] => [p.id, p.label])]);
     fill(this.fps, FPS.map((f): [string, string] => [String(f), `${f} fps`]));
@@ -72,6 +77,12 @@ export class Hud {
     bind(this.style, (v) => handlers.onStyle(Number(v)));
     bind(this.time, (v) => handlers.onTime(v as TimeMode));
     bind(this.weather, (v) => handlers.onWeather(v as Weather));
+    bind(this.radio, (v) => handlers.onRadio(Number(v)));
+    const share = $('btn-share');
+    share.addEventListener('click', () => {
+      share.blur();
+      handlers.onShare();
+    });
   }
 
   sync(s: Settings, cellSetting: string): void {
@@ -82,6 +93,7 @@ export class Hud {
     this.dist.value = String(s.dist);
     this.fov.value = String(s.fov);
     this.style.value = String(s.style);
+    this.radio.value = String(s.station);
     this.root.classList.toggle('hidden', !s.hud);
   }
 

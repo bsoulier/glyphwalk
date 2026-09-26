@@ -13,6 +13,8 @@ export interface Settings {
   hud: boolean;
   minimap: boolean;
   sound: boolean;
+  /** Taxi radio station (RADIO_OFF for off). */
+  station: number;
 }
 
 const KEY = 'glyphwalk.settings.v1';
@@ -29,6 +31,7 @@ const DEFAULTS: Settings = {
   hud: true,
   minimap: true,
   sound: true,
+  station: 0,
 };
 
 export function loadSettings(): Settings {

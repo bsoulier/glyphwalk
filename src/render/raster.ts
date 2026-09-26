@@ -222,7 +222,18 @@ export function drawBoxYaw(
   if (mask & 32) capFace(cx, cy - hy, cz, rX, rZ, fX, fZ, hx, hz, -1);
 }
 
-function wallFace(px_: number, py_: number, pz_: number, nx: number, nz: number, hw: number, hh: number): void {
+/** Upright rectangle facing `yaw`, with its own texture range (signs are laid out in sign units, not metres). */
+export function drawPanel(
+  cx: number, cy: number, cz: number, yaw: number, hw: number, hh: number, uMax: number, vMax: number,
+  mat: number, r: number, g: number, b: number, seed: number,
+): void {
+  F[23] = mat; F[24] = r; F[25] = g; F[26] = b; F[27] = seed;
+  wallFace(cx, cy, cz, Math.sin(yaw), Math.cos(yaw), hw, hh, false);
+  F[14] = uMax; F[16] = uMax; F[17] = vMax; F[19] = vMax;
+  drawFace(F, 0);
+}
+
+function wallFace(px_: number, py_: number, pz_: number, nx: number, nz: number, hw: number, hh: number, draw = true): void {
   const tx = -nz, tz = nx;
   F[0] = px_ - tx * hw; F[1] = py_ - hh; F[2] = pz_ - tz * hw;
   F[3] = px_ + tx * hw; F[4] = py_ - hh; F[5] = pz_ + tz * hw;
@@ -230,7 +241,7 @@ function wallFace(px_: number, py_: number, pz_: number, nx: number, nz: number,
   F[9] = px_ - tx * hw; F[10] = py_ + hh; F[11] = pz_ - tz * hw;
   setUV(hw * 2, hh * 2);
   F[20] = nx; F[21] = 0; F[22] = nz;
-  drawFace(F, 0);
+  if (draw) drawFace(F, 0);
 }
 
 function capFace(

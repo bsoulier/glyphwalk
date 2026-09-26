@@ -56,7 +56,8 @@ export function renderScene(fb: FrameBuffer, cam: Camera, world: World, env: Fra
     if (it) indoors = it;
   }
   world.drawActors(cam, env.time, env.weather === 'rain', env.hidden);
-  drawBackground(fb, cam, env);
+  drawBackground(fb, cam, { ...env, glow: world.fireworks.glow });
+  world.fireworks.draw(fb, cam, env.weather === 'fog' ? FOG_DENSITY : 0);
   // Indoors, only drops beyond the far wall can be outside; nearer ones would fall in the room.
   if (rain.on) rain.draw(fb, indoors ? farCorner(indoors, cam) : 0);
 }

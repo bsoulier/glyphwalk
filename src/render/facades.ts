@@ -386,9 +386,32 @@ export function corrugated(i: number, z: number, r: number, g: number, b: number
   put(i, fxC / z > 2.5 ? G_PIPE : G_COLON, r * sh, g * sh, b * sh, 0.45, z, 0);
 }
 
+/** Seconds per window in which a street sign may lose power, and how long the outage stutters. */
+const STUTTER_WINDOW = 5;
+const STUTTER_S = 1.3;
+
+/**
+ * Brightness of the whole sign: buzzing ones dip at random, and now and then any street sign (id > 0)
+ * loses power, stutters dark with a few blinks, and comes back.
+ */
 function signOn(seed: number): number {
   if (((seed >> 8) & 7) === 0 && (hash2(seed, Math.floor(time * 7)) & 255) < 60) return 0.25;
+  if (seed >> 14 !== 0) {
+    const w = Math.floor(time / STUTTER_WINDOW);
+    if (hash2(seed ^ 0x3c3, w) % 30 === 0 && time - w * STUTTER_WINDOW < STUTTER_S) {
+      return (hash2(seed, Math.floor(time * 20)) & 3) === 0 ? 1 : 0.08;
+    }
+  }
   return 1;
+}
+
+/** Index of a burnt-out letter (one street sign in twelve has one), or -1. It still blinks on now and then. */
+function deadLetter(seed: number, len: number): number {
+  if (seed >> 14 === 0 || len < 3) return -1;
+  const h = hash2(seed, 0x51d);
+  if (h % 12 !== 0) return -1;
+  if ((hash2(seed, Math.floor(time * 9)) & 15) === 0) return -1;
+  return (h >>> 8) % len;
 }
 
 /**
@@ -411,7 +434,7 @@ export function sign(i: number, u: number, v: number, z: number, r: number, g: n
   const k = Math.floor(tu);
   const vb = (SIGN_H - SIGN_BAND_PAD - v) / SIGN_BAND;
   const dim = 0.4 * on;
-  if (k < 0 || k >= gls.length || vb < 0 || vb >= 1) {
+  if (k < 0 || k >= gls.length || vb < 0 || vb >= 1 || k === deadLetter(seed, gls.length)) {
     put(i, G_SPACE, r * dim, g * dim, b * dim, 0.45, z, 1);
     return;
   }
@@ -444,7 +467,7 @@ export function vsign(i: number, u: number, v: number, z: number, r: number, g: 
   }
   const tv = (height - VSIGN_PAD - v) / VSIGN_CHAR_H;
   const k = Math.floor(tv);
-  if (k < 0 || k >= gls.length || u < 0.08 || u > 0.92) {
+  if (k < 0 || k >= gls.length || u < 0.08 || u > 0.92 || k === deadLetter(seed, gls.length)) {
     put(i, G_SPACE, r * dim, g * dim, b * dim, 0.45, z, 1);
     return;
   }

@@ -7,6 +7,8 @@ export const SIGN_TEXTS: readonly string[] = [
   'TAVERN', 'BAKERY', 'INN', 'APOTHECARY', 'CANDLES', 'ANTIQUES', 'BUTCHER', 'CLOCKS',
   'DOCK 7', 'FREIGHT', 'CUSTOMS', 'BONDED', 'PIER 3', 'GATE B',
   'STOP', 'WALK', 'LOBBY', 'LIFT', 'OFFICE',
+  'GYOZA', 'DANGO', 'MOCHI', 'CREPES', 'VIN', 'MIEL', 'OLIVES', 'FLEURS', 'CIDER', 'PIES', 'SOUP', 'MEAD',
+  'NUTS', 'TACOS', 'BAO', 'PHO', 'BBQ', 'BOBA', 'JUICE',
 ];
 
 export const TEXT_STOP = SIGN_TEXTS.indexOf('STOP');
@@ -30,6 +32,12 @@ export const SIGNS_JAPAN = signSet('RAMEN', 'SUSHI', 'SAKE', 'KARAOKE', 'UDON', 
 export const SIGNS_PARIS = signSet('CAFE', 'BRASSERIE', 'BOULANGERIE', 'PHARMACIE', 'BISTRO', 'LIBRAIRIE', 'FROMAGERIE', 'TABAC', 'PATISSERIE', 'HOTEL');
 export const SIGNS_OLDTOWN = signSet('TAVERN', 'BAKERY', 'INN', 'APOTHECARY', 'CANDLES', 'ANTIQUES', 'BUTCHER', 'CLOCKS', 'BOOKS');
 export const SIGNS_DOCKS = signSet('DOCK 7', 'FREIGHT', 'CUSTOMS', 'BONDED', 'PIER 3', 'GATE B', 'DINER', 'BAR');
+export const STALLS_JAPAN = signSet('RAMEN', 'GYOZA', 'DANGO', 'MOCHI', 'SAKE', 'UDON', 'SUSHI', 'TEA');
+export const STALLS_PARIS = signSet('CREPES', 'VIN', 'CAFE', 'MIEL', 'OLIVES', 'FLEURS');
+export const STALLS_OLDTOWN = signSet('CIDER', 'PIES', 'SOUP', 'MEAD', 'NUTS', 'BAKERY');
+export const STALLS_DOWNTOWN = signSet('TACOS', 'BAO', 'PHO', 'BBQ', 'BOBA', 'JUICE', 'PIZZA');
+/** Stalls that cook, so they get a steaming pot. */
+export const STEAMY = signSet('RAMEN', 'GYOZA', 'UDON', 'SOUP', 'PHO', 'BAO', 'BBQ', 'CREPES', 'PIES');
 
 /** Horizontal sign, in sign units (metres at scale 1). */
 export const SIGN_CHAR_W = 0.9;
@@ -54,8 +62,12 @@ export const DOCK_SIGNS: readonly RGB[] = [[255, 160, 60], [200, 220, 255], [255
 /** Sign sizes relative to a shop sign; the small ones are pedestrian signal plates. */
 export const SIGN_SCALES: readonly number[] = [1, 2, 3, 4, 0.5, 0.25];
 
-/** seed = text | flicker << 8 | scale index << 11. Flicker 0 buzzes at random; any other value is steady. */
-export function signSeed(text: number, flicker: number, scale: number): number {
+/**
+ * seed = text | flicker << 8 | scale index << 11 | id << 14. Flicker 0 buzzes at random; any other value is
+ * steady. `id` tells apart street signs with the same text (0 for signs that must never fail, like signals),
+ * so they flicker, stutter and lose letters independently.
+ */
+export function signSeed(text: number, flicker: number, scale: number, id = 0): number {
   const k = Math.max(0, SIGN_SCALES.indexOf(scale));
-  return text | ((flicker & 7) << 8) | (k << 11);
+  return text | ((flicker & 7) << 8) | (k << 11) | ((id & 255) << 14);
 }

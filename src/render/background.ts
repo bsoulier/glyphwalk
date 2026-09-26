@@ -12,6 +12,8 @@ export interface SkyEnv {
   weather: Weather;
   flash: number;
   sky: Daylight;
+  /** Coloured light thrown on the sky by fireworks, strongest low down. */
+  glow?: readonly [number, number, number];
 }
 
 const G_SPACE = 0;
@@ -31,6 +33,7 @@ let tick = 0;
 let clouds = false;
 let clearSky = true;
 let flash = 0;
+let glowR = 0, glowG = 0, glowB = 0;
 let D: Daylight;
 // Star lattice is one unit per cell so each star lands in a single cell.
 let starScaleX = 1;
@@ -44,6 +47,7 @@ export function drawBackground(fb: FrameBuffer, cam: Camera, env: SkyEnv): void 
   clouds = env.weather === 'rain' || env.weather === 'snow';
   clearSky = env.weather === 'clear';
   flash = env.flash;
+  [glowR, glowG, glowB] = env.glow ?? [0, 0, 0];
   D = env.sky;
   starScaleX = cam.fx;
   starScaleY = cam.fy;
@@ -99,6 +103,10 @@ function sky(o: number, dx: number, dy: number, dz: number): void {
   let b = Z[2] + (H[2] - Z[2]) * glow;
   if (flash > 0) {
     r += 38 * flash; g += 42 * flash; b += 58 * flash;
+  }
+  if (glowR + glowG + glowB > 1) {
+    const k = 0.3 + 0.7 * glow;
+    r += glowR * k; g += glowG * k; b += glowB * k;
   }
   const sd = (dx * D.sun[0] + dy * D.sun[1] + dz * D.sun[2]) / len;
   const halo = D.twilight * 0.9 + D.day * 0.2;

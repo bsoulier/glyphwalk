@@ -3,8 +3,8 @@ import type { FrameBuffer } from '../render/framebuffer';
 import { toast } from './toast';
 
 /**
- * Photo mode: the world freezes, the interface hides, and the frame can be saved as a PNG or copied
- * as plain text, which is the same picture made of real characters that can be pasted anywhere.
+ * Photo mode: the world freezes, the interface hides, and the frame can be saved as a PNG, recorded as
+ * a short looping GIF, or copied as plain text, which is the same picture made of real characters.
  */
 export class PhotoMode {
   active = false;
@@ -15,13 +15,19 @@ export class PhotoMode {
   name = 'glyphwalk';
   onShot: (() => void) | null = null;
 
-  constructor(touch: boolean) {
+  constructor(private readonly touch: boolean) {
     this.bar.id = 'photobar';
-    this.bar.textContent = touch
-      ? 'PHOTO MODE \u00b7 world frozen \u00b7 SAVE png \u00b7 COPY text \u00b7 EXIT'
-      : 'PHOTO MODE \u00b7 world frozen \u00b7 ENTER save png \u00b7 C copy as text \u00b7 P exit';
     this.flashEl.id = 'flash';
+    this.setBar(null);
     document.body.append(this.bar, this.flashEl);
+  }
+
+  /** Normal key help, or a status line while a GIF is being recorded or encoded. */
+  setBar(status: string | null): void {
+    this.bar.classList.toggle('busy', status !== null);
+    this.bar.textContent = status ?? (this.touch
+      ? 'PHOTO MODE \u00b7 world frozen \u00b7 SAVE png \u00b7 GIF loop \u00b7 COPY text \u00b7 LINK'
+      : 'PHOTO MODE \u00b7 world frozen \u00b7 ENTER png \u00b7 G gif \u00b7 C copy as text \u00b7 L link \u00b7 P exit');
   }
 
   toggle(): void {
@@ -40,9 +46,14 @@ export class PhotoMode {
     this.flash();
     canvas.toBlob((blob) => {
       if (!blob) return toast('Could not save the image');
-      download(blob, `${this.name}.png`);
-      toast(`Saved ${this.name}.png`);
+      this.save(blob, 'png');
     }, 'image/png');
+  }
+
+  save(blob: Blob, ext: string): void {
+    download(blob, `${this.name}.${ext}`);
+    const kb = blob.size / 1024;
+    toast(`Saved ${this.name}.${ext} (${kb > 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${Math.round(kb)} KB`})`);
   }
 
   copyText(fb: FrameBuffer): void {
@@ -63,7 +74,7 @@ export class PhotoMode {
     else fallback();
   }
 
-  private flash(): void {
+  flash(): void {
     this.onShot?.();
     this.flashEl.classList.remove('go');
     void this.flashEl.offsetWidth;

@@ -74,6 +74,48 @@ body {
   color: #4fa877;
 }
 
+#hud .actions {
+  display: flex;
+  gap: 6px;
+  margin: 8px 0 4px;
+}
+
+#hud button {
+  flex: 1;
+  padding: 5px 6px;
+  background: #03140b;
+  color: #b8ffd6;
+  border: 1px solid #1f5a3a;
+  font: inherit;
+  cursor: pointer;
+}
+
+#hud button:hover {
+  background: #0a2a18;
+}
+
+#hud button[hidden],
+#hud [hidden] {
+  display: none;
+}
+
+/*
+ * On a phone the panel is opened from MENU: it sits on the left, above the touch zones, so the button
+ * column on the right stays reachable, and it scrolls to reach everything.
+ */
+body.touch #hud:not(.hidden) ~ #osd {
+  display: none;
+}
+
+body.touch #hud {
+  left: max(10px, env(safe-area-inset-left));
+  right: auto;
+  z-index: 2;
+  max-height: calc(100% - 20px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 #osd {
   position: fixed;
   top: 14px;
@@ -135,8 +177,14 @@ body.photo #touch .t-bar {
   display: none;
 }
 
-body.photo #photobar {
+body.photo #photobar,
+#photobar.busy {
   display: block;
+}
+
+#photobar.busy {
+  color: #ffd278;
+  border-color: #7a5a1f;
 }
 
 #toast {

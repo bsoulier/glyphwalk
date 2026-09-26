@@ -87,7 +87,7 @@ export class Player {
       this.floorY = 0;
       this.ride = null;
       this.y = EYE;
-      if (world.city.collides(this.x, this.z, RADIUS)) {
+      if (world.blocked(this.x, this.z, RADIUS)) {
         const rx = Math.round(this.x / P) * P, rz = Math.round(this.z / P) * P;
         if (Math.abs(this.x - rx) < Math.abs(this.z - rz)) this.x = rx + 3;
         else this.z = rz + 3;
@@ -225,10 +225,13 @@ export class Player {
           let mx = fX * fwd + rX * str, mz = fZ * fwd + rZ * str;
           len = Math.hypot(mx, mz);
           if (len > 1) { mx /= len; mz /= len; }
+          // A stall can go up around someone standing on its spot at dusk; let them walk out of it.
+          const inStall = world.market.collides(this.x, this.z, RADIUS);
+          const hit = (x: number, z: number) => inStall ? world.city.collides(x, z, RADIUS, this.floorY) : world.blocked(x, z, RADIUS, this.floorY);
           const nx = this.x + mx * sp;
-          if (!world.city.collides(nx, this.z, RADIUS, this.floorY)) this.x = nx;
+          if (!hit(nx, this.z)) this.x = nx;
           const nz = this.z + mz * sp;
-          if (!world.city.collides(this.x, nz, RADIUS, this.floorY)) this.z = nz;
+          if (!hit(this.x, nz)) this.z = nz;
           if (len > 0) {
             const half = Math.floor(this.bob / Math.PI);
             this.bob += sp * 1.9;

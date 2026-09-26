@@ -8,7 +8,7 @@ import { drawMap, mapToWorld, type MapView } from './render/map';
 import { CanvasPresenter, STYLE_NAMES, WebGLPresenter, type Presenter } from './render/presenter';
 import { Rain } from './render/rain';
 import { stats } from './render/raster';
-import { renderScene } from './render/scene';
+import { type FrameEnv, renderScene } from './render/scene';
 import { CHARSET } from './core/charset';
 import { Input } from './game/input';
 import { type TouchButton, TouchControls, touchDevice } from './game/touch';
@@ -16,19 +16,24 @@ import { Tour } from './game/tour';
 import { MODES, MODE_LABELS, Player, type Mode } from './game/player';
 import { HOODS, HOOD_BLOCKS, hoodAt, nearestRegion } from './world/hoods';
 import { Sound } from './audio/sound';
+import { RADIO_OFF, STATIONS } from './audio/radio';
 import { inCab, levelAt } from './world/interior';
 import { signalPhase, walkWindow } from './world/signals';
-import { P, setWorldSeed } from './world/layout';
+import { EYE_H, P, setWorldSeed, worldSeed } from './world/layout';
 import { World } from './world/world';
+import { GifRecorder } from './ui/gif';
 import { Hud } from './ui/hud';
 import { PhotoMode } from './ui/photo';
+import { setupPwa } from './ui/pwa';
+import { shareUrl, viewUrl } from './ui/share';
 import { toast } from './ui/toast';
 import { CATS_PER_HOOD } from './world/cats';
-import { Quality } from './ui/quality';
+import { MAX_DETAIL, Quality, lowEndDevice } from './ui/quality';
 import { loadSettings, saveSettings } from './ui/settings';
 
 const params = new URLSearchParams(location.search);
 setWorldSeed(Number(params.get('seed')) || 1337);
+const isTouch = touchDevice();
 
 let canvas = document.getElementById('screen') as HTMLCanvasElement;
 
@@ -49,7 +54,7 @@ function createPresenter(): Presenter {
 
 const settings = loadSettings();
 const presenter = createPresenter();
-const quality = new Quality(settings.cell, settings.fps);
+const quality = new Quality(settings.cell, settings.fps, lowEndDevice(isTouch));
 const fb = new FrameBuffer();
 const cam = new Camera();
 const rain = new Rain();
@@ -60,9 +65,15 @@ const sound = new Sound();
 sound.setEnabled(settings.sound);
 // Audio may only start from a user gesture, so every tap or key press tries.
 for (const ev of ['pointerdown', 'keydown', 'touchend']) window.addEventListener(ev, () => sound.unlock());
-if (import.meta.env.DEV) Object.assign(window, { glyphwalk: { world, player, sound, get tour() { return tour; } } });
+document.addEventListener('visibilitychange', () => {
+  sound.pause(document.hidden);
+  quality.hold(2);
+});
+const clock = new Clock();
+const gif = new GifRecorder();
+if (import.meta.env.DEV) Object.assign(window, { glyphwalk: { world, player, sound, clock, quality, gif, get tour() { return tour; } } });
 
-// Bookmarkable views: ?cam=x,y,z,yaw,pitch&mode=fly&rain=0
+// Bookmarkable views (Share / L builds these): ?cam=x,y,z,yaw,pitch&mode=walk&floor=4&time=cycle&hour=18.4&weather=rain
 const camParam = params.get('cam')?.split(',').map(Number);
 if (camParam && camParam.length >= 3 && camParam.every(Number.isFinite)) {
   [player.x, player.y, player.z] = camParam;
@@ -71,6 +82,13 @@ if (camParam && camParam.length >= 3 && camParam.every(Number.isFinite)) {
 }
 const modeParam = params.get('mode');
 if (modeParam && (MODES as readonly string[]).includes(modeParam)) player.setMode(modeParam as Mode, world);
+const floorParam = Number(params.get('floor'));
+if (player.mode === 'walk' && floorParam > 0) {
+  player.floorY = floorParam;
+  player.y = floorParam + EYE_H;
+}
+const hourParam = Number(params.get('hour'));
+if (params.has('hour') && hourParam >= 0 && hourParam < 24) clock.hour = hourParam;
 if (params.has('rain')) settings.weather = params.get('rain') !== '0' ? 'rain' : 'clear';
 const weatherParam = params.get('weather');
 if (weatherParam && (WEATHERS as readonly string[]).includes(weatherParam)) settings.weather = weatherParam as Weather;
@@ -165,6 +183,8 @@ const hud = new Hud({
     applyWeather();
     persist();
   },
+  onRadio: (station) => tune(station),
+  onShare: () => shareView(),
 });
 
 function persist(): void {
@@ -177,7 +197,7 @@ let cellPxH = 1;
 let dpr = 1;
 
 function layout(): void {
-  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  dpr = Math.min(window.devicePixelRatio || 1, quality.maxDpr);
   const preset = quality.preset;
   cellPxW = Math.max(2, Math.round(preset.w * dpr));
   cellPxH = Math.max(3, Math.round(preset.h * dpr));
@@ -229,7 +249,7 @@ function mapPick(clientX: number, clientY: number): void {
 
 canvas.addEventListener('mousedown', (e) => mapPick(e.clientX, e.clientY));
 
-const touch = touchDevice()
+const touch = isTouch
   ? new TouchControls(input, [
     { label: 'MODE', code: 'KeyV' },
     { label: 'NEXT', code: 'KeyN' },
@@ -254,6 +274,7 @@ if (touch) {
 
 const photo = new PhotoMode(touch !== null);
 photo.onShot = () => sound.shutter();
+setupPwa(document.getElementById('btn-install') as HTMLButtonElement, document.getElementById('ios-hint') as HTMLElement);
 
 function togglePhoto(): void {
   photo.toggle();
@@ -264,11 +285,65 @@ function togglePhoto(): void {
   }
 }
 
-/** Buttons that only apply right now: photo actions, map zoom, flying up and down, or riding a lift. */
+/** Records a few seconds of the live world (it unfreezes for the take) into a looping GIF. */
+function startGif(): void {
+  if (gif.active || gif.encoding) return;
+  gif.start(canvas.width / dpr, canvas.height / dpr, settings.style);
+  sound.shutter();
+}
+
+async function finishGif(): Promise<void> {
+  photo.setBar('ENCODING GIF...');
+  try {
+    const blob = await gif.encode();
+    photo.save(blob, 'gif');
+  } catch (err) {
+    console.error(err);
+    toast('Could not make the GIF');
+  }
+  photo.setBar(null);
+}
+
+/** Copies (or on phones, shares) a link that reopens the game on exactly this view, hour and weather. */
+function shareView(): void {
+  const riding = player.mode !== 'walk' && player.mode !== 'fly';
+  const url = viewUrl({
+    x: cam.x, y: cam.y, z: cam.z, yaw: cam.yaw, pitch: cam.pitch,
+    // Rides and street cameras cannot be reproduced exactly, so the link keeps their view as a free camera.
+    mode: riding ? 'fly' : player.mode === 'fly' ? 'fly' : 'walk',
+    floor: player.mode === 'walk' ? player.floorY : 0,
+    hour: sky.hour, time: settings.time, weather: settings.weather, seed: worldSeed,
+  });
+  const where = `${HOODS[currentHood()].name} at ${clockText(sky.hour)} (${sky.label}, ${WEATHER_LABELS[settings.weather].toLowerCase()})`;
+  void shareUrl(url, `Glyphwalk: ${where}`, touch !== null).then((how) => {
+    if (how === 'copied') toast(`Link copied: opens ${where}`);
+    else if (how === 'failed') prompt('Copy this link:', url);
+  });
+}
+
+function riding(): boolean {
+  return player.mode === 'taxi' || player.mode === 'sky';
+}
+
+function tune(station: number): void {
+  settings.station = ((station % (RADIO_OFF + 1)) + RADIO_OFF + 1) % (RADIO_OFF + 1);
+  persist();
+  const s = STATIONS[settings.station];
+  toast(s ? `\u266a ${s.name}  ${s.genre}` : '\u266a Radio off', 1800);
+}
+
+/** Buttons that only apply right now: photo actions, map zoom, flying up and down, riding a lift or a cab. */
 function touchContext(): TouchButton[] {
-  if (photo.active) return [{ label: 'SAVE', code: 'Enter' }, { label: 'COPY', code: 'KeyC' }, { label: 'EXIT', code: 'KeyP' }];
+  if (photo.active) {
+    if (gif.active || gif.encoding) return [];
+    return [
+      { label: 'SAVE', code: 'Enter' }, { label: 'GIF', code: 'KeyG' }, { label: 'COPY', code: 'KeyC' },
+      { label: 'LINK', code: 'KeyL' }, { label: 'EXIT', code: 'KeyP' },
+    ];
+  }
   if (fullMap) return [{ label: 'ZOOM +', code: 'Equal' }, { label: 'ZOOM -', code: 'Minus' }];
   if (player.mode === 'fly') return [{ label: 'RISE', code: 'KeyE', hold: true }, { label: 'SINK', code: 'KeyQ', hold: true }];
+  if (riding()) return [{ label: 'RADIO', code: 'KeyE' }];
   const it = player.inside(world);
   if (it && !player.liftMoving && inCab(it, player.x, player.z)) return [{ label: 'LIFT UP', code: 'KeyE' }, { label: 'LIFT DN', code: 'KeyQ' }];
   return [];
@@ -297,10 +372,17 @@ function handleKeys(): void {
       case 'KeyN': player.next(world); break;
       case 'KeyB': goToHood((currentHood() + 1) % HOODS.length); break;
       case 'KeyM': cycleMap(); break;
-      case 'KeyE': player.useLift(1, world); break;
-      case 'KeyQ': player.useLift(-1, world); break;
+      case 'KeyE':
+        if (riding()) tune(settings.station + 1);
+        else player.useLift(1, world);
+        break;
+      case 'KeyQ':
+        if (riding()) tune(settings.station - 1);
+        else player.useLift(-1, world);
+        break;
       case 'KeyP': togglePhoto(); break;
       case 'KeyO': startTour(); break;
+      case 'KeyL': shareView(); break;
       case 'Enter': if (photo.active) photo.requestPng(); break;
       case 'KeyC': if (photo.active) photo.copyText(fb); break;
       case 'Escape':
@@ -325,6 +407,10 @@ function handleKeys(): void {
         persist();
         break;
       case 'KeyG':
+        if (photo.active) {
+          startGif();
+          break;
+        }
         settings.style = (settings.style + 1) % STYLE_NAMES.length;
         persist();
         break;
@@ -383,6 +469,7 @@ function updateHud(): void {
     `FPS      ${(1000 / quality.frameMs).toFixed(0).padStart(3)}   cpu ${quality.workMs.toFixed(1)} ms`,
     `GRID     ${fb.cols}x${fb.rows} = ${((fb.cols * fb.rows) / 1000).toFixed(1)}k cells`,
     `CELL     ${quality.preset.label}${quality.auto ? ' [auto]' : ''}`,
+    `DETAIL   ${MAX_DETAIL - quality.detail + 1}/${MAX_DETAIL + 1}   draw ${drawDist()} m${dpr < (window.devicePixelRatio || 1) ? `  ${dpr}x px` : ''}`,
     `DRAWN    ${stats.faces} faces / ${stats.blocks} blocks / ${stats.actors} actors`,
     `POS      ${cam.x.toFixed(1)} / ${cam.z.toFixed(1)}  alt ${cam.y.toFixed(1)}`,
     `BEARING  ${bearing.toFixed(0).padStart(3, '0')} ${compass}`,
@@ -399,8 +486,10 @@ function updateHud(): void {
     const stamp = now.toISOString().replace('T', ' ').slice(0, 19);
     const rec = Math.floor(time * 1.5) % 2 === 0 ? '\u25CF REC' : '  REC';
     osd = `CAM-${String(player.cctv.id).padStart(2, '0')}  ${rec}\n${stamp} UTC\n${district}`;
-  } else if (player.mode === 'taxi' || player.mode === 'sky') {
-    osd = `${MODE_LABELS[player.mode]}\n${district} loop\nN: next vehicle in ${district}`;
+  } else if (riding()) {
+    const st = STATIONS[settings.station];
+    const radio = st ? `\u266a ${st.name}  ${st.genre}` : '\u266a radio off';
+    osd = `${MODE_LABELS[player.mode]}\n${district} loop\nN: next vehicle in ${district}\n${radio}  (${touch ? 'RADIO' : 'Q / E'} to tune)`;
   } else if (player.mode === 'rail') {
     osd = `${MODE_LABELS[player.mode]}\n${district} shuttle`;
   } else if (indoors) {
@@ -430,10 +519,26 @@ function soundFrame(dt: number): void {
     cars: world.cars.list,
     crossing: atCrossing && walkWindow(signalPhase(ci, cj, world.time)) > 0,
     night: 1 - sky.day,
+    cab: riding(),
+    station: settings.station,
+    market: world.market.nearest(cam.x, cam.z),
   });
 }
 
-const clock = new Clock();
+/** Draw distance after the automatic detail level, and capped in fog where nothing further shows. */
+function drawDist(): number {
+  const d = Math.round(settings.dist * quality.distScale);
+  return settings.weather === 'fog' ? Math.min(d, FOG_FAR) : d;
+}
+
+/** Launches and bursts over the docks, heard with the right bearing and delay. */
+function fireworksFrame(dt: number): void {
+  for (const b of world.fireworks.update(dt, world.time, sky.lamps > 0.6, cam)) {
+    const dx = b.x - cam.x, dz = b.z - cam.z;
+    sound.firework(b.kind, Math.sin(Math.atan2(dx, dz) - cam.yaw) * 0.8, Math.hypot(dx, b.y - cam.y, dz));
+  }
+}
+
 let sky = daylightAt(clock.hour, settings.weather);
 
 /** Seconds without input before the tour starts on its own. */
@@ -503,6 +608,21 @@ function catFrame(dt: number): void {
   }
 }
 
+/** While recording, the GIF's own small view follows the camera and grabs a frame at the GIF frame rate. */
+function gifFrame(dt: number, env: FrameEnv): void {
+  if (!gif.active) return;
+  gif.follow(cam);
+  gif.rain.on = rain.on;
+  gif.rain.snow = rain.snow;
+  gif.rain.update(dt, gif.cam, gif.fb.cols, gif.fb.rows);
+  if (gif.due(dt)) {
+    renderScene(gif.fb, gif.cam, world, env, gif.rain);
+    gif.capture();
+    photo.setBar(`\u25cf REC GIF  ${Math.round(gif.progress * 100)}%`);
+  }
+  if (!gif.active) void finishGif();
+}
+
 let last = performance.now();
 let time = 0;
 let hudTimer = 0;
@@ -514,20 +634,23 @@ function frame(now: number): void {
   const frameMs = Math.max(0, now - last);
   last = now;
   const dt = Math.min(0.05, frameMs / 1000);
-  // In photo mode the world stands still; only the camera moves.
-  const simDt = photo.active ? 0 : dt;
+  // In photo mode the world stands still and only the camera moves, except while a GIF is recording.
+  const simDt = photo.active && !gif.active ? 0 : dt;
   time += simDt;
 
   tourFrame(dt);
   handleKeys();
   touch?.setContext(touchContext());
   sky = daylightAt(clock.advance(simDt, settings.time), settings.weather);
-  world.update(simDt, player.x, player.z, settings.dist, player.riding(world), player.walker());
+  const dist = drawDist();
+  world.update(simDt, player.x, player.z, dist, player.riding(world), player.walker());
+  world.market.setLamps(sky.lamps);
   player.update(dt, input, world, cam);
-  cam.far = settings.weather === 'fog' ? Math.min(settings.dist, FOG_FAR) : settings.dist;
+  cam.far = dist;
   cam.fovDeg = settings.fov;
   cam.update(fb.cols, fb.rows, cellPxW, cellPxH);
   rain.update(simDt, cam, fb.cols, fb.rows);
+  fireworksFrame(simDt);
 
   if (settings.weather === 'rain' && !photo.active) {
     lightning -= dt;
@@ -543,15 +666,16 @@ function frame(now: number): void {
   const flicker = flash > 0.55 && flash < 0.75 ? 0.2 : flash;
 
   const t0 = performance.now();
-  renderScene(fb, cam, world, {
+  const env = {
     time,
     weather: settings.weather,
     flash: flicker,
-    propDist: Math.min(170, settings.dist * 0.65),
+    propDist: Math.min(170, dist * 0.65),
     hidden: player.mode === 'sky' ? player.riding(world) : null,
     liftDoors: player.liftDoors,
     sky,
-  }, rain);
+  };
+  renderScene(fb, cam, world, env, rain);
   if (staticT > 0) {
     if (!photo.active) addStatic(staticT);
     staticT -= dt;
@@ -563,6 +687,7 @@ function frame(now: number): void {
   presenter.present(fb, settings.style, settings.scan);
   photo.afterPresent(canvas);
   const work = performance.now() - t0;
+  gifFrame(dt, env);
 
   if (quality.sample(frameMs, work, dt)) layout();
   hudTimer -= dt;

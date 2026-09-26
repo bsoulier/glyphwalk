@@ -1,4 +1,5 @@
 import { glyph } from '../core/charset';
+import { hash3 } from '../core/hash';
 import {
   M_AWNING, M_CONCRETE, M_LAMP, M_LEAF, M_ROOF, M_SIGN, M_TRUNK, M_VSIGN, M_WATER,
 } from '../render/materials';
@@ -109,6 +110,11 @@ export function perimeterLots(rng: () => number, r: Rect, depth: number, minW: n
   return out;
 }
 
+/** 1..255 from where the sign hangs; derived from position so the block's random stream is left untouched. */
+function signId(x: number, y: number, z: number): number {
+  return 1 + (hash3(Math.floor(x * 4), Math.floor(y * 4), Math.floor(z * 4)) % 255);
+}
+
 /** Returns the chosen text, or -1 when none fits. */
 export function wallSign(
   B: Builder, s: Side, texts: readonly number[], colors: readonly RGB[], y0: number, scale: number,
@@ -124,7 +130,7 @@ export function wallSign(
   const ax = s.p0x + s.tx * t0 + s.nx * 0.3, az = s.p0z + s.tz * t0 + s.nz * 0.3;
   const bx = ax + s.tx * W, bz = az + s.tz * W;
   const c = pick(rng, colors);
-  const seed = signSeed(ti, Math.floor(rng() * 8), scale);
+  const seed = signSeed(ti, Math.floor(rng() * 8), scale, signId(ax, y0, az));
   B.faces.poly(
     ax, y0, az, bx, y0, bz, bx, y0 + H, bz, ax, y0 + H, az,
     0, 0, wu, 0, wu, SIGN_H, 0, SIGN_H, M_SIGN, c[0], c[1], c[2], seed,
@@ -144,7 +150,7 @@ export function bladeSign(
   const qx = s.p0x + s.tx * t + s.nx * 0.25, qz = s.p0z + s.tz * t + s.nz * 0.25;
   const ex = qx + s.nx * VSIGN_W, ez = qz + s.nz * VSIGN_W;
   const c = pick(rng, colors);
-  const seed = signSeed(ti, Math.floor(rng() * 8), 1);
+  const seed = signSeed(ti, Math.floor(rng() * 8), 1, signId(qx, y0, qz));
   const y1 = y0 + H;
   B.props.poly(qx, y0, qz, ex, y0, ez, ex, y1, ez, qx, y1, qz, 0, 0, 1, 0, 1, H, 0, H, M_VSIGN, c[0], c[1], c[2], seed);
   B.props.poly(ex, y0, ez, qx, y0, qz, qx, y1, qz, ex, y1, ez, 0, 0, 1, 0, 1, H, 0, H, M_VSIGN, c[0], c[1], c[2], seed);
