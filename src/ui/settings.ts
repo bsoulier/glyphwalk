@@ -1,3 +1,4 @@
+import { SOUND_KINDS, type SoundKind } from '../audio/sound';
 import type { TimeMode } from '../render/daylight';
 import { WEATHERS, type Weather } from '../render/weather';
 
@@ -13,8 +14,14 @@ export interface Settings {
   hud: boolean;
   minimap: boolean;
   sound: boolean;
+  /** Master volume, 0 to 1. */
+  volume: number;
+  /** Kinds of sound switched off. */
+  soundOff: SoundKind[];
   /** Taxi radio station (RADIO_OFF for off). */
   station: number;
+  /** The "stats for nerds" overlay. */
+  nerds: boolean;
 }
 
 const KEY = 'glyphwalk.settings.v1';
@@ -31,7 +38,10 @@ const DEFAULTS: Settings = {
   hud: true,
   minimap: true,
   sound: true,
+  volume: 1,
+  soundOff: [],
   station: 0,
+  nerds: false,
 };
 
 export function loadSettings(): Settings {
@@ -44,12 +54,14 @@ export function loadSettings(): Settings {
       delete saved.rain;
       const s = { ...DEFAULTS, ...saved };
       if (!WEATHERS.includes(s.weather)) s.weather = DEFAULTS.weather;
+      if (!Array.isArray(s.soundOff)) s.soundOff = [];
+      s.soundOff = s.soundOff.filter((k) => SOUND_KINDS.includes(k));
       return s;
     }
   } catch {
     // Corrupt or blocked storage just means defaults.
   }
-  return { ...DEFAULTS };
+  return { ...DEFAULTS, soundOff: [] };
 }
 
 export function saveSettings(s: Settings): void {

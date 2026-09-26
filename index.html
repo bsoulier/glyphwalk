@@ -31,6 +31,12 @@
       <label>Draw distance <select id="sel-dist"></select></label>
       <label>Field of view <select id="sel-fov"></select></label>
       <label>Style <select id="sel-style"></select></label>
+      <div class="sound">
+        <label class="check"><input type="checkbox" id="chk-sound" /> Sound</label>
+        <input type="range" id="rng-volume" min="0" max="100" step="5" aria-label="Volume" />
+      </div>
+      <div id="sound-kinds" class="kinds"></div>
+      <label class="check"><input type="checkbox" id="chk-nerds" /> Stats for nerds</label>
       <div class="actions">
         <button id="btn-share" type="button">Share this view</button>
         <button id="btn-install" type="button" hidden>Install app</button>
@@ -59,10 +65,16 @@ L copy a link to this exact view
 O auto tour (starts when idle)
 R weather  Y time of day  U sound
 G style  T scanlines  F fullscreen
-H hide this panel</pre>
+I stats for nerds  H hide this panel</pre>
     </aside>
 
-    <pre id="osd"></pre>
+    <div id="corner">
+      <div id="nerds" hidden>
+        <div class="head">Stats for nerds <button id="nerds-close" type="button" aria-label="Close stats">[X]</button></div>
+        <pre id="nerds-body"></pre>
+      </div>
+      <pre id="osd"></pre>
+    </div>
     <div id="hint">H panel &middot; V mode &middot; [ ] cell size</div>
 
     <script type="module" src="/src/main.ts"></script>

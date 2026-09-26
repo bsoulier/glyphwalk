@@ -66,6 +66,18 @@ const STEPS: Record<number, Step> = {
 /** Pentatonic notes for Japantown's wind chimes. */
 const CHIMES = [1568, 1760, 2093, 2349, 2637, 3136];
 
+/** Kinds of sound that can be switched off one by one. */
+export const SOUND_KINDS = ['ambience', 'traffic', 'steps', 'events', 'radio'] as const;
+export type SoundKind = (typeof SOUND_KINDS)[number];
+export const SOUND_KIND_LABELS: Record<SoundKind, string> = {
+  ambience: 'City & weather',
+  traffic: 'Traffic & rides',
+  steps: 'Footsteps & lifts',
+  events: 'Fireworks, cats, thunder',
+  radio: 'Taxi radio',
+};
+const MASTER = 0.8;
+
 /**
  * A soundscape made entirely from oscillators and one noise buffer, so it adds nothing to download.
  * Outdoor sounds share a bus that is low-passed when you walk inside, which does most of the work of
@@ -88,6 +100,10 @@ export class Sound {
   private motor!: GainNode;
   private rumble!: GainNode;
   private voices: Voice[] = [];
+  /** A gain per kind on each side of the muffle filter, so any kind can be silenced indoors and out. */
+  private readonly kinds = {} as Record<SoundKind, { out: GainNode; in: GainNode }>;
+  private readonly off = new Set<SoundKind>();
+  private volume = 1;
   private radio: Radio | null = null;
   private t = 0;
   private lastSteps = 0;
@@ -99,6 +115,13 @@ export class Sound {
 
   get enabled(): boolean {
     return this.on;
+  }
+
+  /** One line for the stats overlay. */
+  get status(): string {
+    if (!this.ctx) return 'waiting for a tap or key press';
+    const off = this.off.size > 0 ? `, off: ${[...this.off].join(' ')}` : '';
+    return `${this.ctx.state}, ${(this.ctx.sampleRate / 1000).toFixed(1)} kHz, volume ${Math.round(this.volume * 100)}%${this.on ? '' : ' (muted)'}${off}`;
   }
 
   /** Browsers only start audio from a user gesture; call this from every tap and key press. */
@@ -117,7 +140,36 @@ export class Sound {
 
   setEnabled(on: boolean): void {
     this.on = on;
-    if (this.ctx) this.master.gain.setTargetAtTime(on ? 0.8 : 0, this.ctx.currentTime, 0.05);
+    this.applyMaster();
+  }
+
+  /** 0 to 1. */
+  setVolume(v: number): void {
+    this.volume = Math.max(0, Math.min(1, v));
+    this.applyMaster();
+  }
+
+  setKind(kind: SoundKind, on: boolean): void {
+    if (on) this.off.delete(kind);
+    else this.off.add(kind);
+    const k = this.kinds[kind];
+    if (!this.ctx || !k) return;
+    const now = this.ctx.currentTime;
+    k.out.gain.setTargetAtTime(on ? 1 : 0, now, 0.05);
+    k.in.gain.setTargetAtTime(on ? 1 : 0, now, 0.05);
+  }
+
+  private applyMaster(): void {
+    // Squared so the slider feels even: loudness is roughly logarithmic.
+    if (this.ctx) this.master.gain.setTargetAtTime(this.on ? MASTER * this.volume * this.volume : 0, this.ctx.currentTime, 0.05);
+  }
+
+  private outside(kind: SoundKind): GainNode {
+    return this.kinds[kind].out;
+  }
+
+  private inside(kind: SoundKind): GainNode {
+    return this.kinds[kind].in;
   }
 
   private init(): void {
@@ -127,13 +179,17 @@ export class Sound {
     this.ctx = ctx;
     const comp = ctx.createDynamicsCompressor();
     comp.connect(ctx.destination);
-    this.master = this.gainNode(this.on ? 0.8 : 0, comp);
+    this.master = this.gainNode(this.on ? MASTER * this.volume * this.volume : 0, comp);
     this.muffle = ctx.createBiquadFilter();
     this.muffle.type = 'lowpass';
     this.muffle.frequency.value = 16000;
     this.muffle.connect(this.master);
     this.outdoor = this.gainNode(1, this.muffle);
     this.indoor = this.gainNode(1, this.master);
+    for (const k of SOUND_KINDS) {
+      const v = this.off.has(k) ? 0 : 1;
+      this.kinds[k] = { out: this.gainNode(v, this.outdoor), in: this.gainNode(v, this.indoor) };
+    }
 
     this.noise = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
     const n = this.noise.getChannelData(0);
@@ -143,13 +199,13 @@ export class Sound {
     const s = this.sizzle.getChannelData(0);
     for (let k = 0; k < s.length; k++) s[k] = (Math.random() * 2 - 1) * (Math.random() < 0.002 ? 1 : 0.12);
 
-    this.city = this.bed('lowpass', 420, 0.7, this.outdoor);
-    this.rainBed = this.bed('highpass', 900, 0.5, this.outdoor);
-    this.wind = this.bed('bandpass', 380, 0.5, this.outdoor);
-    this.rumble = this.bed('lowpass', 160, 0.7, this.indoor);
-    this.hum = this.bed('lowpass', 200, 0.7, this.indoor);
-    this.motor = this.bed('lowpass', 110, 1.5, this.indoor);
-    this.fry = this.gainNode(0, this.indoor);
+    this.city = this.bed('lowpass', 420, 0.7, this.outside('ambience'));
+    this.rainBed = this.bed('highpass', 900, 0.5, this.outside('ambience'));
+    this.wind = this.bed('bandpass', 380, 0.5, this.outside('ambience'));
+    this.rumble = this.bed('lowpass', 160, 0.7, this.inside('traffic'));
+    this.hum = this.bed('lowpass', 200, 0.7, this.inside('ambience'));
+    this.motor = this.bed('lowpass', 110, 1.5, this.inside('steps'));
+    this.fry = this.gainNode(0, this.inside('ambience'));
     const fs = ctx.createBufferSource();
     fs.buffer = this.sizzle;
     fs.loop = true;
@@ -160,7 +216,7 @@ export class Sound {
     fs.start();
 
     // Crowd murmur: band-passed noise whose loudness wobbles on two slow, unrelated rhythms.
-    this.murmur = this.gainNode(0, this.indoor);
+    this.murmur = this.gainNode(0, this.inside('ambience'));
     const am = this.gainNode(0.6, this.murmur);
     const ms = this.loop(this.noise);
     const mf = ctx.createBiquadFilter();
@@ -181,7 +237,7 @@ export class Sound {
       filter.type = 'bandpass';
       filter.Q.value = 0.9;
       const pan = ctx.createStereoPanner();
-      pan.connect(this.outdoor);
+      pan.connect(this.outside('traffic'));
       const gain = this.gainNode(0, pan);
       src.connect(filter).connect(gain);
       const engine = ctx.createOscillator();
@@ -194,7 +250,7 @@ export class Sound {
       engine.start();
       this.voices.push({ filter, gain, pan, engine, engineGain });
     }
-    this.radio = new Radio(ctx, this.indoor, this.noise);
+    this.radio = new Radio(ctx, this.inside('radio'), this.noise);
   }
 
   // ---- building blocks ----
@@ -287,14 +343,14 @@ export class Sound {
   thunder(): void {
     if (!this.ctx) return;
     const delay = 0.4 + Math.random() * 1.6;
-    this.burst('lowpass', 140, 0.8, 3.8, 0.9, this.outdoor, delay);
-    this.burst('lowpass', 600, 0.6, 0.6, 0.35, this.outdoor, delay);
+    this.burst('lowpass', 140, 0.8, 3.8, 0.9, this.outside('events'), delay);
+    this.burst('lowpass', 600, 0.6, 0.6, 0.35, this.outside('events'), delay);
   }
 
   shutter(): void {
     if (!this.ctx) return;
-    this.burst('highpass', 2500, 0.7, 0.025, 0.4, this.indoor);
-    this.burst('highpass', 1800, 0.7, 0.04, 0.3, this.indoor, 0.09);
+    this.burst('highpass', 2500, 0.7, 0.025, 0.4, this.inside('events'));
+    this.burst('highpass', 1800, 0.7, 0.04, 0.3, this.inside('events'), 0.09);
   }
 
   /** A cat: sawtooth through a formant that opens and closes, "mi-a-ow". */
@@ -320,7 +376,7 @@ export class Sound {
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.7);
     const p = ctx.createStereoPanner();
     p.pan.value = pan;
-    o.connect(f).connect(g).connect(p).connect(this.indoor);
+    o.connect(f).connect(g).connect(p).connect(this.inside('events'));
     o.start(t0);
     o.stop(t0 + 0.75);
   }
@@ -328,8 +384,8 @@ export class Sound {
   /** Short rising blip, for finding things. */
   chime(): void {
     if (!this.ctx) return;
-    this.tone(1320, 0.25, 0.12, this.indoor);
-    this.tone(1980, 0.4, 0.1, this.indoor, { delay: 0.1 });
+    this.tone(1320, 0.25, 0.12, this.inside('events'));
+    this.tone(1980, 0.4, 0.1, this.inside('events'), { delay: 0.1 });
   }
 
   /**
@@ -338,7 +394,7 @@ export class Sound {
    */
   firework(kind: 'launch' | 'burst' | 'crackle', pan: number, dist: number): void {
     if (!this.ctx || this.ctx.state !== 'running') return;
-    const o = this.outdoor;
+    const o = this.outside('events');
     const delay = dist / 343;
     const near = 1 / (1 + dist / 90);
     if (kind === 'launch') {
@@ -377,7 +433,7 @@ export class Sound {
 
     if (s.crossing && this.t >= this.nextChirp) {
       this.nextChirp = this.t + 0.55;
-      this.tone(2900, 0.06, 0.05, this.outdoor, { to: 3700 });
+      this.tone(2900, 0.06, 0.05, this.outside('ambience'), { to: 3700 });
     }
   }
 
@@ -416,8 +472,8 @@ export class Sound {
         if (this.t - last > 4) {
           this.honked.set(v.seed, this.t);
           const pan = Math.sin(bearing) * 0.8;
-          this.tone(392, 0.35, 0.12 * Math.max(fall, 0.2), this.outdoor, { type: 'square', pan });
-          this.tone(494, 0.35, 0.1 * Math.max(fall, 0.2), this.outdoor, { type: 'square', pan });
+          this.tone(392, 0.35, 0.12 * Math.max(fall, 0.2), this.outside('traffic'), { type: 'square', pan });
+          this.tone(494, 0.35, 0.1 * Math.max(fall, 0.2), this.outside('traffic'), { type: 'square', pan });
         }
       }
     });
@@ -431,16 +487,16 @@ export class Sound {
       : s.weather === 'rain' ? STEP_WET : s.weather === 'snow' ? STEP_SNOW : STEP_STREET;
     const k = s.running ? 1.3 : 1;
     const pan = (s.steps & 1) === 0 ? -0.15 : 0.15;
-    this.burst(st.type, st.freq * (0.9 + Math.random() * 0.2), st.q, st.dur, st.gain * k, this.indoor, 0, pan);
+    this.burst(st.type, st.freq * (0.9 + Math.random() * 0.2), st.q, st.dur, st.gain * k, this.inside('steps'), 0, pan);
   }
 
   private lift(s: SoundState): void {
     const phase = s.lift;
     if (phase !== this.lastLift) {
-      if (phase === 1 || phase === 3) this.burst('bandpass', 700, 0.8, 0.7, 0.12, this.indoor);
+      if (phase === 1 || phase === 3) this.burst('bandpass', 700, 0.8, 0.7, 0.12, this.inside('steps'));
       if (phase === 3) {
-        this.tone(1319, 0.9, 0.12, this.indoor);
-        this.tone(1047, 1.2, 0.1, this.indoor, { delay: 0.18 });
+        this.tone(1319, 0.9, 0.12, this.inside('steps'));
+        this.tone(1047, 1.2, 0.1, this.inside('steps'), { delay: 0.18 });
       }
       this.lastLift = phase;
     }
@@ -457,12 +513,12 @@ export class Sound {
     this.level(this.fry, Math.max(r === 'NOODLE BAR' ? 0.3 : 0, stalls * stalls * 0.22));
     const humming = r === 'OFFICES' || r === 'SHIPPING OFFICE' || r === 'WAREHOUSE' || r === 'SHOP';
     this.level(this.hum, humming ? (r === 'WAREHOUSE' ? 0.5 : 0.25) : s.indoors ? 0.08 : 0);
-    if ((r === 'CAFE' || r === 'BAR') && this.every('clink', 2, 7)) this.tone(2800 + Math.random() * 900, 0.3, 0.04, this.indoor);
+    if ((r === 'CAFE' || r === 'BAR') && this.every('clink', 2, 7)) this.tone(2800 + Math.random() * 900, 0.3, 0.04, this.inside('ambience'));
     if (r === 'ARCADE' && this.every('bleep', 0.06, 0.25)) {
-      this.tone(220 * 2 ** (Math.floor(Math.random() * 24) / 12), 0.08, 0.07, this.indoor, { type: 'square', pan: Math.random() * 1.6 - 0.8 });
+      this.tone(220 * 2 ** (Math.floor(Math.random() * 24) / 12), 0.08, 0.07, this.inside('ambience'), { type: 'square', pan: Math.random() * 1.6 - 0.8 });
     }
     if (r === 'WAREHOUSE' && this.every('clank', 5, 14)) {
-      for (const f of [310, 437, 596]) this.tone(f, 1.4, 0.05, this.indoor, { pan: 0.4 });
+      for (const f of [310, 437, 596]) this.tone(f, 1.4, 0.05, this.inside('ambience'), { pan: 0.4 });
     }
     if (r === 'TATAMI ROOM' && this.every('chimeIn', 6, 14)) this.windChime(0.3);
   }
@@ -470,13 +526,13 @@ export class Sound {
   private windChime(pan: number): void {
     const n = 3 + Math.floor(Math.random() * 3);
     for (let k = 0; k < n; k++) {
-      this.tone(CHIMES[Math.floor(Math.random() * CHIMES.length)], 2.4, 0.045, this.outdoor, { delay: k * (0.12 + Math.random() * 0.25), pan });
+      this.tone(CHIMES[Math.floor(Math.random() * CHIMES.length)], 2.4, 0.045, this.outside('ambience'), { delay: k * (0.12 + Math.random() * 0.25), pan });
     }
   }
 
   /** A signature sound per district, heard outdoors (and muffled through the walls). */
   private district(s: SoundState): void {
-    const o = this.outdoor;
+    const o = this.outside('ambience');
     // Neon districts at night: the odd buzz and snap of a failing sign somewhere nearby.
     if ((s.hood === H_DOWNTOWN || s.hood === H_JAPAN) && s.night > 0.5 && this.every('neon', 5, 13)) this.neonZap(Math.random() * 1.4 - 0.7);
     switch (s.hood) {
@@ -515,8 +571,8 @@ export class Sound {
     const n = 2 + Math.floor(Math.random() * 4);
     for (let k = 0; k < n; k++) {
       const delay = k * (0.05 + Math.random() * 0.12);
-      this.tone(120, 0.07 + Math.random() * 0.08, 0.018, this.outdoor, { type: 'sawtooth', delay, pan });
-      this.burst('bandpass', 3500, 1.5, 0.03, 0.05, this.outdoor, delay, pan);
+      this.tone(120, 0.07 + Math.random() * 0.08, 0.018, this.outside('ambience'), { type: 'sawtooth', delay, pan });
+      this.burst('bandpass', 3500, 1.5, 0.03, 0.05, this.outside('ambience'), delay, pan);
     }
   }
 
@@ -534,8 +590,8 @@ export class Sound {
     const riding = s.mode === 'rail' || s.mode === 'taxi' || s.mode === 'sky';
     this.level(this.rumble, riding ? (s.mode === 'sky' ? 0.12 : 0.25) : 0);
     if (s.mode === 'rail' && this.every('clack', 0.55, 0.6)) {
-      this.burst('lowpass', 1400, 1, 0.05, 0.25, this.indoor);
-      this.burst('lowpass', 1200, 1, 0.05, 0.2, this.indoor, 0.14);
+      this.burst('lowpass', 1400, 1, 0.05, 0.25, this.inside('traffic'));
+      this.burst('lowpass', 1200, 1, 0.05, 0.2, this.inside('traffic'), 0.14);
     }
   }
 }

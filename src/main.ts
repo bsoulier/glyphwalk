@@ -63,6 +63,8 @@ const player = new Player();
 const input = new Input(canvas);
 const sound = new Sound();
 sound.setEnabled(settings.sound);
+sound.setVolume(settings.volume);
+for (const k of settings.soundOff) sound.setKind(k, false);
 // Audio may only start from a user gesture, so every tap or key press tries.
 for (const ev of ['pointerdown', 'keydown', 'touchend']) window.addEventListener(ev, () => sound.unlock());
 document.addEventListener('visibilitychange', () => {
@@ -185,7 +187,32 @@ const hud = new Hud({
   },
   onRadio: (station) => tune(station),
   onShare: () => shareView(),
+  onSound: (on) => setSound(on),
+  onVolume: (v) => {
+    settings.volume = v;
+    sound.setVolume(v);
+    persist();
+  },
+  onSoundKind: (kind, on) => {
+    settings.soundOff = settings.soundOff.filter((k) => k !== kind);
+    if (!on) settings.soundOff.push(kind);
+    sound.setKind(kind, on);
+    persist();
+  },
+  onNerds: (on) => setNerds(on),
 });
+
+function setSound(on: boolean): void {
+  settings.sound = on;
+  sound.setEnabled(on);
+  persist();
+}
+
+function setNerds(on: boolean): void {
+  settings.nerds = on;
+  persist();
+  updateHud();
+}
 
 function persist(): void {
   saveSettings(settings);
@@ -419,10 +446,10 @@ function handleKeys(): void {
         persist();
         break;
       case 'KeyU':
-        settings.sound = !settings.sound;
-        sound.setEnabled(settings.sound);
-        persist();
+        setSound(!settings.sound);
+        toast(settings.sound ? 'Sound on' : 'Sound off', 1200);
         break;
+      case 'KeyI': setNerds(!settings.nerds); break;
       case 'KeyY':
         settings.time = TIME_MODES[(TIME_MODES.indexOf(settings.time) + 1) % TIME_MODES.length];
         persist();
@@ -456,6 +483,13 @@ function addStatic(amount: number): void {
 }
 
 const COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+const BARS = '\u2581\u2582\u2583\u2584\u2585\u2586\u2587\u2588';
+/** Recent frame durations in ms, oldest first, for the stats overlay. */
+const frameTimes: number[] = [];
+
+function sparkline(values: readonly number[], full: number): string {
+  return values.map((v) => BARS[Math.min(BARS.length - 1, Math.floor((v / full) * BARS.length))]).join('');
+}
 
 function updateHud(): void {
   const bearing = (((cam.yaw * 180) / Math.PI) % 360 + 360) % 360;
@@ -466,19 +500,29 @@ function updateHud(): void {
   hud.setHood(hood);
   hud.setStats([
     `MODE     ${MODE_LABELS[player.mode]}`,
-    `FPS      ${(1000 / quality.frameMs).toFixed(0).padStart(3)}   cpu ${quality.workMs.toFixed(1)} ms`,
-    `GRID     ${fb.cols}x${fb.rows} = ${((fb.cols * fb.rows) / 1000).toFixed(1)}k cells`,
-    `CELL     ${quality.preset.label}${quality.auto ? ' [auto]' : ''}`,
-    `DETAIL   ${MAX_DETAIL - quality.detail + 1}/${MAX_DETAIL + 1}   draw ${drawDist()} m${dpr < (window.devicePixelRatio || 1) ? `  ${dpr}x px` : ''}`,
-    `DRAWN    ${stats.faces} faces / ${stats.blocks} blocks / ${stats.actors} actors`,
-    `POS      ${cam.x.toFixed(1)} / ${cam.z.toFixed(1)}  alt ${cam.y.toFixed(1)}`,
-    `BEARING  ${bearing.toFixed(0).padStart(3, '0')} ${compass}`,
     `SECTOR   ${district}${indoors ? ` / ${indoors.label}` : ''}`,
     `CATS     ${district} ${world.cats.count(hood)}/${CATS_PER_HOOD}   city ${world.cats.total}/${CATS_PER_HOOD * HOODS.length}`,
     `TIME     ${clockText(sky.hour)} ${sky.label}${settings.time === 'cycle' ? '' : ' (fixed)'}`,
     `WEATHER  ${WEATHER_LABELS[settings.weather].toUpperCase()}`,
-    `RENDER   ${presenter.name}`,
   ].join('\n'));
+  if (hud.nerdsOpen) {
+    const budget = 1000 / quality.targetFps;
+    hud.setNerds([
+      `Renderer       ${presenter.name}`,
+      `Frame rate     ${(1000 / quality.frameMs).toFixed(0)} fps (target ${quality.targetFps})   frame ${quality.frameMs.toFixed(1)} ms   cpu ${quality.workMs.toFixed(1)} ms`,
+      `Frame times    ${sparkline(frameTimes, budget * 2)}  (full bar = ${(budget * 2).toFixed(0)} ms)`,
+      `Grid           ${fb.cols}x${fb.rows} = ${((fb.cols * fb.rows) / 1000).toFixed(1)}k cells`,
+      `Cell           ${quality.preset.label}${quality.auto ? ' [auto]' : ''}   pixel ratio ${dpr}`,
+      `Detail         ${MAX_DETAIL - quality.detail + 1}/${MAX_DETAIL + 1}   draw distance ${drawDist()} m`,
+      `Drawn          ${stats.faces} faces / ${stats.blocks} blocks / ${stats.actors} actors`,
+      `Blocks cached  ${world.city.cachedBlocks}`,
+      `Position       ${cam.x.toFixed(1)} / ${cam.z.toFixed(1)}   alt ${cam.y.toFixed(1)}`,
+      `Bearing        ${bearing.toFixed(0).padStart(3, '0')} ${compass}   pitch ${((cam.pitch * 180) / Math.PI).toFixed(0)} deg`,
+      `Viewport       ${window.innerWidth}x${window.innerHeight} css px   canvas ${canvas.width}x${canvas.height}`,
+      `World seed     ${worldSeed}`,
+      `Audio          ${sound.status}`,
+    ].join('\n'));
+  }
 
   let osd: string | null = null;
   if (player.mode === 'cctv') {
@@ -690,6 +734,8 @@ function frame(now: number): void {
   gifFrame(dt, env);
 
   if (quality.sample(frameMs, work, dt)) layout();
+  frameTimes.push(frameMs);
+  if (frameTimes.length > 48) frameTimes.shift();
   hudTimer -= dt;
   if (hudTimer <= 0) {
     hudTimer = 0.25;

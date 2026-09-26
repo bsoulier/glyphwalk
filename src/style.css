@@ -99,11 +99,48 @@ body {
   display: none;
 }
 
+#hud label.check {
+  justify-content: flex-start;
+  gap: 6px;
+  cursor: pointer;
+}
+
+#hud input[type='checkbox'],
+#hud input[type='range'] {
+  margin: 0;
+  accent-color: #3fbf7a;
+}
+
+#hud .sound {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+#hud .sound input[type='range'] {
+  flex: 1;
+  max-width: 150px;
+}
+
+#hud .kinds {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 8px;
+  margin: 2px 0 6px 18px;
+  color: #4fa877;
+}
+
+#hud .kinds.muted {
+  opacity: 0.45;
+}
+
 /*
  * On a phone the panel is opened from MENU: it sits on the left, above the touch zones, so the button
  * column on the right stays reachable, and it scrolls to reach everything.
  */
-body.touch #hud:not(.hidden) ~ #osd {
+body.touch #hud:not(.hidden) ~ #corner {
   display: none;
 }
 
@@ -116,11 +153,67 @@ body.touch #hud {
   -webkit-overflow-scrolling: touch;
 }
 
-#osd {
+/* Top-left corner: the stats overlay above the camera's on-screen text, neither pushing the other off. */
+#corner {
   position: fixed;
-  top: 14px;
-  left: 18px;
+  top: max(10px, env(safe-area-inset-top));
+  left: max(10px, env(safe-area-inset-left));
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  pointer-events: none;
+}
+
+#nerds {
+  padding: 8px 10px 6px;
+  background: rgba(0, 0, 0, 0.72);
+  border: 1px solid #1f5a3a;
+  color: #e8ffe8;
+  font-size: 11px;
+  line-height: 1.45;
+  pointer-events: auto;
+}
+
+#nerds[hidden] {
+  display: none;
+}
+
+body.touch #nerds {
+  font-size: 9px;
+}
+
+#nerds .head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 4px;
+  color: #b8ffd6;
+  letter-spacing: 0.08em;
+}
+
+#nerds button {
+  padding: 0 2px;
+  background: none;
+  border: none;
+  color: #7dffb0;
+  font: inherit;
+  cursor: pointer;
+}
+
+#nerds button:hover {
+  color: #fff;
+}
+
+#nerds pre {
   margin: 0;
+  font: inherit;
+  white-space: pre;
+}
+
+#osd {
+  margin: 0 0 0 8px;
   display: none;
   color: #e8ffe8;
   font: 13px/1.5 ui-monospace, Menlo, Consolas, monospace;
@@ -156,7 +249,7 @@ body.touch #hint.gone {
 /* ---- photo mode ---- */
 
 body.photo #hud,
-body.photo #osd,
+body.photo #corner,
 body.photo #hint,
 body.photo #touch .t-bar {
   display: none;

@@ -1,4 +1,5 @@
 import { RADIO_OFF, STATIONS } from '../audio/radio';
+import { SOUND_KINDS, SOUND_KIND_LABELS, type SoundKind } from '../audio/sound';
 import { TIME_LABELS, TIME_MODES, type TimeMode } from '../render/daylight';
 import { STYLE_NAMES } from '../render/presenter';
 import { WEATHERS, WEATHER_LABELS, type Weather } from '../render/weather';
@@ -17,6 +18,10 @@ export interface HudHandlers {
   onWeather(weather: Weather): void;
   onRadio(station: number): void;
   onShare(): void;
+  onSound(on: boolean): void;
+  onVolume(volume: number): void;
+  onSoundKind(kind: SoundKind, on: boolean): void;
+  onNerds(on: boolean): void;
 }
 
 const DISTANCES = [120, 180, 260, 400, 600];
@@ -43,6 +48,8 @@ export class Hud {
   private readonly root = $('hud');
   private readonly stats = $('stats');
   private readonly osd = $('osd');
+  private readonly nerds = $('nerds');
+  private readonly nerdsBody = $('nerds-body');
   private readonly hood = $('sel-hood') as HTMLSelectElement;
   private readonly cell = $('sel-cell') as HTMLSelectElement;
   private readonly fps = $('sel-fps') as HTMLSelectElement;
@@ -52,6 +59,11 @@ export class Hud {
   private readonly time = $('sel-time') as HTMLSelectElement;
   private readonly weather = $('sel-weather') as HTMLSelectElement;
   private readonly radio = $('sel-radio') as HTMLSelectElement;
+  private readonly sound = $('chk-sound') as HTMLInputElement;
+  private readonly volume = $('rng-volume') as HTMLInputElement;
+  private readonly kindsBox = $('sound-kinds');
+  private readonly kinds = new Map<SoundKind, HTMLInputElement>();
+  private readonly nerdsCheck = $('chk-nerds') as HTMLInputElement;
 
   constructor(handlers: HudHandlers) {
     fill(this.time, TIME_MODES.map((m): [string, string] => [m, TIME_LABELS[m]]));
@@ -83,6 +95,29 @@ export class Hud {
       share.blur();
       handlers.onShare();
     });
+
+    // Checkboxes and the slider give focus back to the game, so keys keep working after a click.
+    const check = (el: HTMLInputElement, fn: (on: boolean) => void) => {
+      el.addEventListener('change', () => {
+        fn(el.checked);
+        el.blur();
+      });
+    };
+    check(this.sound, (on) => handlers.onSound(on));
+    this.volume.addEventListener('input', () => handlers.onVolume(Number(this.volume.value) / 100));
+    this.volume.addEventListener('change', () => this.volume.blur());
+    for (const k of SOUND_KINDS) {
+      const label = document.createElement('label');
+      label.className = 'check';
+      const box = document.createElement('input');
+      box.type = 'checkbox';
+      label.append(box, ` ${SOUND_KIND_LABELS[k]}`);
+      this.kindsBox.append(label);
+      this.kinds.set(k, box);
+      check(box, (on) => handlers.onSoundKind(k, on));
+    }
+    check(this.nerdsCheck, (on) => handlers.onNerds(on));
+    $('nerds-close').addEventListener('click', () => handlers.onNerds(false));
   }
 
   sync(s: Settings, cellSetting: string): void {
@@ -94,6 +129,12 @@ export class Hud {
     this.fov.value = String(s.fov);
     this.style.value = String(s.style);
     this.radio.value = String(s.station);
+    this.sound.checked = s.sound;
+    if (document.activeElement !== this.volume) this.volume.value = String(Math.round(s.volume * 100));
+    for (const [k, box] of this.kinds) box.checked = !s.soundOff.includes(k);
+    this.kindsBox.classList.toggle('muted', !s.sound);
+    this.nerdsCheck.checked = s.nerds;
+    this.nerds.hidden = !s.nerds;
     this.root.classList.toggle('hidden', !s.hud);
   }
 
@@ -104,6 +145,14 @@ export class Hud {
 
   setStats(text: string): void {
     this.stats.textContent = text;
+  }
+
+  get nerdsOpen(): boolean {
+    return !this.nerds.hidden;
+  }
+
+  setNerds(text: string): void {
+    this.nerdsBody.textContent = text;
   }
 
   setOsd(text: string | null): void {
