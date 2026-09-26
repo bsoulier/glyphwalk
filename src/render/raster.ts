@@ -50,7 +50,7 @@ const sx = new Float64Array(8), sy = new Float64Array(8);
 const siz = new Float64Array(8), suz = new Float64Array(8), svz = new Float64Array(8);
 
 export function drawFace(d: ArrayLike<number>, o: number): void {
-  const nx = d[o + 16], ny = d[o + 17], nz = d[o + 18];
+  const nx = d[o + 20], ny = d[o + 21], nz = d[o + 22];
   if ((camX - d[o]) * nx + (camY - d[o + 1]) * ny + (camZ - d[o + 2]) * nz <= 0) return;
 
   let outAll = 0x3f;
@@ -74,11 +74,10 @@ export function drawFace(d: ArrayLike<number>, o: number): void {
   }
   if (outAll !== 0) return;
 
-  const u0 = d[o + 12], v0 = d[o + 13], u1 = d[o + 14], v1 = d[o + 15];
-  qu[0] = u0; qv[0] = v0;
-  qu[1] = u1; qv[1] = v0;
-  qu[2] = u1; qv[2] = v1;
-  qu[3] = u0; qv[3] = v1;
+  for (let k = 0; k < 4; k++) {
+    qu[k] = d[o + 12 + k * 2];
+    qv[k] = d[o + 13 + k * 2];
+  }
 
   let n = 0;
   if (behind === 0) {
@@ -119,8 +118,8 @@ export function drawFace(d: ArrayLike<number>, o: number): void {
 
   const dot = nx * LX + ny * LY + nz * LZ;
   const sh = 0.58 + 0.42 * (dot > 0 ? dot : 0);
-  const mat = d[o + 19] | 0, seed = d[o + 23] | 0;
-  const r = d[o + 20], g = d[o + 21], b = d[o + 22];
+  const mat = d[o + 23] | 0, seed = d[o + 27] | 0;
+  const r = d[o + 24], g = d[o + 25], b = d[o + 26];
   stats.faces++;
   for (let k = 1; k < n - 1; k++) rasterTri(0, k, k + 1, mat, r, g, b, sh, seed);
 }
@@ -182,7 +181,7 @@ export function drawBoxYaw(
 ): void {
   const fX = Math.sin(yaw), fZ = Math.cos(yaw);
   const rX = fZ, rZ = -fX;
-  F[19] = mat; F[20] = r; F[21] = g; F[22] = b; F[23] = seed;
+  F[23] = mat; F[24] = r; F[25] = g; F[26] = b; F[27] = seed;
   if (mask & 1) wallFace(cx + fX * hz, cy, cz + fZ * hz, fX, fZ, hx, hy);
   if (mask & 2) wallFace(cx - fX * hz, cy, cz - fZ * hz, -fX, -fZ, hx, hy);
   if (mask & 4) wallFace(cx + rX * hx, cy, cz + rZ * hx, rX, rZ, hz, hy);
@@ -197,8 +196,8 @@ function wallFace(px_: number, py_: number, pz_: number, nx: number, nz: number,
   F[3] = px_ + tx * hw; F[4] = py_ - hh; F[5] = pz_ + tz * hw;
   F[6] = px_ + tx * hw; F[7] = py_ + hh; F[8] = pz_ + tz * hw;
   F[9] = px_ - tx * hw; F[10] = py_ + hh; F[11] = pz_ - tz * hw;
-  F[12] = 0; F[13] = 0; F[14] = hw * 2; F[15] = hh * 2;
-  F[16] = nx; F[17] = 0; F[18] = nz;
+  setUV(hw * 2, hh * 2);
+  F[20] = nx; F[21] = 0; F[22] = nz;
   drawFace(F, 0);
 }
 
@@ -210,9 +209,16 @@ function capFace(
   F[3] = px_ + rX * hx - fX * hz; F[4] = py_; F[5] = pz_ + rZ * hx - fZ * hz;
   F[6] = px_ + rX * hx + fX * hz; F[7] = py_; F[8] = pz_ + rZ * hx + fZ * hz;
   F[9] = px_ - rX * hx + fX * hz; F[10] = py_; F[11] = pz_ - rZ * hx + fZ * hz;
-  F[12] = 0; F[13] = 0; F[14] = hx * 2; F[15] = hz * 2;
-  F[16] = 0; F[17] = ny; F[18] = 0;
+  setUV(hx * 2, hz * 2);
+  F[20] = 0; F[21] = ny; F[22] = 0;
   drawFace(F, 0);
+}
+
+function setUV(w: number, h: number): void {
+  F[12] = 0; F[13] = 0;
+  F[14] = w; F[15] = 0;
+  F[16] = w; F[17] = h;
+  F[18] = 0; F[19] = h;
 }
 
 /**

@@ -62,6 +62,22 @@ export class Player {
     this.onCut?.();
   }
 
+  teleport(x: number, z: number, yaw: number, world: World): void {
+    this.x = x;
+    this.z = z;
+    this.yaw = yaw;
+    if (this.mode !== 'fly') this.pitch = 0.02;
+    this.lookYaw = 0;
+    this.lookPitch = 0;
+    if (this.mode === 'walk') this.y = EYE;
+    else if (this.mode === 'cctv') this.pickCctv();
+    else if (this.mode !== 'fly') {
+      this.setMode('walk', world);
+      return;
+    }
+    this.onCut?.();
+  }
+
   cycle(step: number, world: World): void {
     const k = MODES.indexOf(this.mode);
     this.setMode(MODES[(k + step + MODES.length) % MODES.length], world);

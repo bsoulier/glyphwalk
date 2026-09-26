@@ -1,8 +1,10 @@
 import { STYLE_NAMES } from '../render/presenter';
+import { HOODS } from '../world/hoods';
 import { CELL_PRESETS } from './quality';
 import type { Settings } from './settings';
 
 export interface HudHandlers {
+  onHood(hood: number): void;
   onCell(id: string): void;
   onFps(fps: number): void;
   onDist(dist: number): void;
@@ -34,6 +36,7 @@ export class Hud {
   private readonly root = $('hud');
   private readonly stats = $('stats');
   private readonly osd = $('osd');
+  private readonly hood = $('sel-hood') as HTMLSelectElement;
   private readonly cell = $('sel-cell') as HTMLSelectElement;
   private readonly fps = $('sel-fps') as HTMLSelectElement;
   private readonly dist = $('sel-dist') as HTMLSelectElement;
@@ -41,6 +44,7 @@ export class Hud {
   private readonly style = $('sel-style') as HTMLSelectElement;
 
   constructor(handlers: HudHandlers) {
+    fill(this.hood, HOODS.map((h, k): [string, string] => [String(k), h.name]));
     fill(this.cell, [['auto', 'Auto (fit target FPS)'], ...CELL_PRESETS.map((p): [string, string] => [p.id, p.label])]);
     fill(this.fps, FPS.map((f): [string, string] => [String(f), `${f} fps`]));
     fill(this.dist, DISTANCES.map((d): [string, string] => [String(d), `${d} m`]));
@@ -52,6 +56,7 @@ export class Hud {
         sel.blur();
       });
     };
+    bind(this.hood, (v) => handlers.onHood(Number(v)));
     bind(this.cell, (v) => handlers.onCell(v));
     bind(this.fps, (v) => handlers.onFps(Number(v)));
     bind(this.dist, (v) => handlers.onDist(Number(v)));
@@ -66,6 +71,11 @@ export class Hud {
     this.fov.value = String(s.fov);
     this.style.value = String(s.style);
     this.root.classList.toggle('hidden', !s.hud);
+  }
+
+  /** Reflects the district under the camera, unless the user is currently choosing one. */
+  setHood(hood: number): void {
+    if (document.activeElement !== this.hood) this.hood.value = String(hood);
   }
 
   setStats(text: string): void {

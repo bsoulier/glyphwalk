@@ -9,7 +9,8 @@ import { renderScene } from './render/scene';
 import { CHARSET } from './core/charset';
 import { Input } from './game/input';
 import { MODES, MODE_LABELS, Player, type Mode } from './game/player';
-import { DISTRICTS, P, districtAt, setWorldSeed } from './world/layout';
+import { HOODS, HOOD_BLOCKS, hoodAt, nearestRegion } from './world/hoods';
+import { P, setWorldSeed } from './world/layout';
 import { World } from './world/world';
 import { Hud } from './ui/hud';
 import { Quality } from './ui/quality';
@@ -59,7 +60,27 @@ const cellParam = params.get('cell');
 if (cellParam) quality.set(cellParam);
 rain.on = settings.rain;
 
+function currentHood(): number {
+  return hoodAt(Math.floor(player.x / P), Math.floor(player.z / P));
+}
+
+/** Stand on the sidewalk corner of the region's central crossroads, looking diagonally across it. */
+function goToHood(hood: number): void {
+  const r = nearestRegion(hood, Math.floor(player.x / P), Math.floor(player.z / P));
+  if (!r) return;
+  const ci = r[0] * HOOD_BLOCKS + HOOD_BLOCKS / 2, cj = r[1] * HOOD_BLOCKS + HOOD_BLOCKS / 2;
+  player.teleport(ci * P + 8.6, cj * P + 8.6, -2.36, world);
+  world.city.prime();
+}
+
+const hoodParam = params.get('hood');
+if (hoodParam) {
+  const k = HOODS.findIndex((h, n) => String(n) === hoodParam || h.name.replace(/\s+/g, '').toLowerCase() === hoodParam.toLowerCase());
+  if (k >= 0) goToHood(k);
+}
+
 const hud = new Hud({
+  onHood: (hood) => goToHood(hood),
   onCell: (id) => {
     quality.set(id);
     settings.cell = quality.cellSetting;
@@ -129,6 +150,7 @@ function handleKeys(): void {
     switch (code) {
       case 'KeyV': player.cycle(1, world); break;
       case 'KeyN': player.next(world); break;
+      case 'KeyB': goToHood((currentHood() + 1) % HOODS.length); break;
       case 'KeyR':
         settings.rain = !settings.rain;
         rain.on = settings.rain;
@@ -179,7 +201,9 @@ const COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
 function updateHud(): void {
   const bearing = (((cam.yaw * 180) / Math.PI) % 360 + 360) % 360;
   const compass = COMPASS[Math.round(bearing / 45) % 8];
-  const district = DISTRICTS[districtAt(Math.floor(cam.x / P), Math.floor(cam.z / P))].name;
+  const hood = hoodAt(Math.floor(cam.x / P), Math.floor(cam.z / P));
+  const district = HOODS[hood].name;
+  hud.setHood(hood);
   hud.setStats([
     `MODE     ${MODE_LABELS[player.mode]}`,
     `FPS      ${(1000 / quality.frameMs).toFixed(0).padStart(3)}   cpu ${quality.workMs.toFixed(1)} ms`,
