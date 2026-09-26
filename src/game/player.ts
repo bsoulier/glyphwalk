@@ -37,6 +37,9 @@ export class Player {
   pitch = 0.04;
   /** Height of the floor the walker stands on: 0 outdoors, a storey height inside buildings. */
   floorY = 0;
+  /** Counts footsteps (one per half cycle of the head bob), for sound. */
+  steps = 0;
+  running = false;
   private ride: { from: number; to: number; t: number; dur: number } | null = null;
   private lookYaw = 0;
   private lookPitch = 0;
@@ -100,6 +103,13 @@ export class Player {
 
   get liftMoving(): boolean {
     return this.ride !== null;
+  }
+
+  /** 0 no ride, 1 doors closing, 2 moving, 3 doors opening. */
+  get liftPhase(): number {
+    const r = this.ride;
+    if (!r) return 0;
+    return r.t < LIFT_DOORS_T ? 1 : r.t < LIFT_DOORS_T + r.dur ? 2 : 3;
   }
 
   /** How far the doors of the lift being ridden are closed: 0 open, 1 shut. */
@@ -191,13 +201,16 @@ export class Player {
 
   update(dt: number, input: Input, world: World, cam: Camera): void {
     const [mdx, mdy] = input.takeMouse();
-    const turn = input.axis(['ArrowLeft'], ['ArrowRight']) * dt * 1.8;
+    const [tYaw, tPitch] = input.takeTurn();
+    const turn = input.axis(['ArrowLeft'], ['ArrowRight']) * dt * 1.8 + tYaw;
+    const tilt = mdy * SENS - tPitch;
 
     if (this.mode === 'walk' || this.mode === 'fly') {
       this.yaw += mdx * SENS + turn;
-      this.pitch = clamp(this.pitch - mdy * SENS, -1.45, 1.45);
-      const fwd = input.axis(BACK_KEYS, FWD_KEYS), str = input.axis(LEFT_KEYS, RIGHT_KEYS);
-      const run = input.down('ShiftLeft') || input.down('ShiftRight');
+      this.pitch = clamp(this.pitch - tilt, -1.45, 1.45);
+      const fwd = clamp(input.axis(BACK_KEYS, FWD_KEYS) + input.stickY, -1, 1);
+      const str = clamp(input.axis(LEFT_KEYS, RIGHT_KEYS) + input.stickX, -1, 1);
+      const run = input.down('ShiftLeft') || input.down('ShiftRight') || input.stickRun;
       const fX = Math.sin(this.yaw), fZ = Math.cos(this.yaw), rX = fZ, rZ = -fX;
       if (this.mode === 'walk') {
         const r = this.ride;
@@ -216,7 +229,12 @@ export class Player {
           if (!world.city.collides(nx, this.z, RADIUS, this.floorY)) this.x = nx;
           const nz = this.z + mz * sp;
           if (!world.city.collides(this.x, nz, RADIUS, this.floorY)) this.z = nz;
-          if (len > 0) this.bob += sp * 1.9;
+          if (len > 0) {
+            const half = Math.floor(this.bob / Math.PI);
+            this.bob += sp * 1.9;
+            if (Math.floor(this.bob / Math.PI) !== half) this.steps++;
+          }
+          this.running = run && len > 0;
         }
         this.y = this.floorY + EYE + Math.sin(this.bob) * (len > 0 ? 0.035 : 0);
       } else {
@@ -233,7 +251,7 @@ export class Player {
     }
 
     this.lookYaw += mdx * SENS + turn;
-    this.lookPitch = clamp(this.lookPitch - mdy * SENS, -1.2, 1.2);
+    this.lookPitch = clamp(this.lookPitch - tilt, -1.2, 1.2);
 
     if (this.mode === 'cctv') {
       const c = this.cctv;

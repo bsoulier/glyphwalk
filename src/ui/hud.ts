@@ -1,4 +1,6 @@
+import { TIME_LABELS, TIME_MODES, type TimeMode } from '../render/daylight';
 import { STYLE_NAMES } from '../render/presenter';
+import { WEATHERS, WEATHER_LABELS, type Weather } from '../render/weather';
 import { HOODS } from '../world/hoods';
 import { CELL_PRESETS } from './quality';
 import type { Settings } from './settings';
@@ -10,6 +12,8 @@ export interface HudHandlers {
   onDist(dist: number): void;
   onFov(fov: number): void;
   onStyle(style: number): void;
+  onTime(mode: TimeMode): void;
+  onWeather(weather: Weather): void;
 }
 
 const DISTANCES = [120, 180, 260, 400, 600];
@@ -42,8 +46,12 @@ export class Hud {
   private readonly dist = $('sel-dist') as HTMLSelectElement;
   private readonly fov = $('sel-fov') as HTMLSelectElement;
   private readonly style = $('sel-style') as HTMLSelectElement;
+  private readonly time = $('sel-time') as HTMLSelectElement;
+  private readonly weather = $('sel-weather') as HTMLSelectElement;
 
   constructor(handlers: HudHandlers) {
+    fill(this.time, TIME_MODES.map((m): [string, string] => [m, TIME_LABELS[m]]));
+    fill(this.weather, WEATHERS.map((w): [string, string] => [w, WEATHER_LABELS[w]]));
     fill(this.hood, HOODS.map((h, k): [string, string] => [String(k), h.name]));
     fill(this.cell, [['auto', 'Auto (fit target FPS)'], ...CELL_PRESETS.map((p): [string, string] => [p.id, p.label])]);
     fill(this.fps, FPS.map((f): [string, string] => [String(f), `${f} fps`]));
@@ -62,9 +70,13 @@ export class Hud {
     bind(this.dist, (v) => handlers.onDist(Number(v)));
     bind(this.fov, (v) => handlers.onFov(Number(v)));
     bind(this.style, (v) => handlers.onStyle(Number(v)));
+    bind(this.time, (v) => handlers.onTime(v as TimeMode));
+    bind(this.weather, (v) => handlers.onWeather(v as Weather));
   }
 
   sync(s: Settings, cellSetting: string): void {
+    this.time.value = s.time;
+    this.weather.value = s.weather;
     this.cell.value = cellSetting;
     this.fps.value = String(s.fps);
     this.dist.value = String(s.dist);

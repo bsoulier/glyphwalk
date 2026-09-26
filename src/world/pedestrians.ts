@@ -11,10 +11,10 @@ const DX = [1, 0, -1, 0];
 const DZ = [0, 1, 0, -1];
 const G_PIPE = glyph('|');
 
-const SHIRTS: readonly (readonly [number, number, number])[] = [
+export const SHIRTS: readonly (readonly [number, number, number])[] = [
   [200, 60, 60], [60, 120, 210], [230, 200, 80], [90, 190, 110], [200, 200, 205], [150, 80, 180], [240, 130, 40], [60, 60, 70],
 ];
-const SKINS: readonly (readonly [number, number, number])[] = [[230, 185, 150], [190, 140, 100], [140, 95, 65], [95, 65, 45]];
+export const SKINS: readonly (readonly [number, number, number])[] = [[230, 185, 150], [190, 140, 100], [140, 95, 65], [95, 65, 45]];
 const UMBRELLAS: readonly (readonly [number, number, number])[] = [[40, 40, 50], [200, 40, 60], [40, 110, 200], [230, 230, 235]];
 
 class Ped {

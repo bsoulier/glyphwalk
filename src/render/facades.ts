@@ -4,7 +4,7 @@ import { fontBits } from '../world/font';
 import {
   SIGN_BAND_PAD, SIGN_CHAR_W, SIGN_H, SIGN_PAD, SIGN_SCALES, SIGN_TEXTS, VSIGN_CHAR_H, VSIGN_PAD,
 } from '../world/signs';
-import { fxC, fyC, put, span, time } from './surface';
+import { fxC, fyC, put, span, time, windowLit } from './surface';
 
 export const F_GENERIC = 0;
 export const F_GLASS = 1;
@@ -101,8 +101,9 @@ export function wall(i: number, u: number, v: number, z: number, r: number, g: n
   }
 }
 
+/** Each window has a fixed hash, so as `windowLit` rises at dusk they switch on one by one. */
 function litThreshold(seed: number, base: number): number {
-  return (base + ((seed >> 2) & 7) * 0.055) * 1024;
+  return (base + ((seed >> 2) & 7) * 0.055) * 1024 * windowLit;
 }
 
 /**

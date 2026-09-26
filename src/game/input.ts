@@ -9,8 +9,12 @@ export class Input {
   locked = false;
   /** When false, clicks on the canvas are left to the page (e.g. picking a spot on the map). */
   canLock: () => boolean = () => true;
+  /** performance.now() of the last key, mouse or touch activity, for the idle tour. */
+  lastActive = performance.now();
 
   constructor(canvas: HTMLCanvasElement) {
+    const active = () => (this.lastActive = performance.now());
+    for (const ev of ['keydown', 'mousemove', 'mousedown', 'wheel', 'pointerdown', 'pointermove']) window.addEventListener(ev, active, { passive: true });
     window.addEventListener('keydown', (e) => {
       if (e.target instanceof HTMLSelectElement || e.target instanceof HTMLInputElement) return;
       if (e.metaKey || e.ctrlKey) return;
@@ -58,5 +62,46 @@ export class Input {
     const q = this.pressed;
     this.pressed = [];
     return q;
+  }
+
+  // ---- virtual input, used by the touch controls so the game only ever sees keys, a stick and turns ----
+
+  /** Analogue stick: x to the right, y forward. Up to 1 walks; pushing past 1.2 runs. */
+  stickX = 0;
+  stickY = 0;
+  private turnYaw = 0;
+  private turnPitch = 0;
+
+  /** A tap on a virtual key, as if it had been pressed and released. */
+  press(code: string): void {
+    this.pressed.push(code);
+  }
+
+  hold(code: string, on: boolean): void {
+    if (on) this.keys.add(code);
+    else this.keys.delete(code);
+  }
+
+  /** Look drag in screen pixels, treated like mouse movement. */
+  look(dx: number, dy: number): void {
+    this.mx += dx;
+    this.my += dy;
+  }
+
+  /** Direct rotation in radians (gyroscope), positive yaw to the right and pitch up. */
+  turn(yaw: number, pitch: number): void {
+    this.turnYaw += yaw;
+    this.turnPitch += pitch;
+  }
+
+  takeTurn(): [number, number] {
+    const t: [number, number] = [this.turnYaw, this.turnPitch];
+    this.turnYaw = 0;
+    this.turnPitch = 0;
+    return t;
+  }
+
+  get stickRun(): boolean {
+    return Math.hypot(this.stickX, this.stickY) > 1.2;
   }
 }

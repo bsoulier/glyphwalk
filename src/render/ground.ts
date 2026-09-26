@@ -4,7 +4,8 @@ import { HOODS, H_DOCKS, H_DOWNTOWN, H_JAPAN, H_OLDTOWN, H_PARIS, hoodAt } from 
 import {
   HALF, KIND_CITY, KIND_PARK, KIND_PLAZA, LAMP_OFF, LAMP_SPACING, LOT_EDGE, P, ROAD_HALF, blockKind, hasPond,
 } from '../world/layout';
-import { put } from './surface';
+import { lampsOn, put } from './surface';
+import { SNOW } from './weather';
 
 const G_SPACE = 0;
 const G_DOT = glyph('.');
@@ -26,11 +27,14 @@ let tick = 0;
 let rain = false;
 let nsVertical = false;
 
-export function beginGround(t: number, raining: boolean, lookingAlongZ: boolean): void {
+let snow = false;
+
+export function beginGround(t: number, raining: boolean, lookingAlongZ: boolean, snowing: boolean): void {
   time = t;
   tick = Math.floor(t * 10);
   rain = raining;
   nsVertical = lookingAlongZ;
+  snow = snowing;
 }
 
 // Output of the per-neighbourhood painters, kept in module scope so nothing is allocated per cell.
@@ -53,8 +57,19 @@ export function groundCell(o: number, X: number, Z: number, t: number, fp: numbe
   if (onX || onZ) road(hood, X, Z, onX, onZ, ax, az, sx, sz, lx, lz, fp);
   else if (ax < LOT_EDGE || az < LOT_EDGE) sidewalk(hood, X, Z, ax, az, fp);
   else lot(hood, bi, bj, X, Z, lx - HALF, lz - HALF, fp);
+  if (snow) {
+    // Roads are churned to grey slush with darker tyre tracks; everything else lies under snow.
+    let k = 0.85;
+    if (onX || onZ) {
+      const lane = (onX ? ax : az) % 3.5;
+      k = lane > 1.2 && lane < 2.3 ? 0.38 : 0.7;
+    }
+    R += (SNOW[0] - R) * k; G += (SNOW[1] - G) * k; B += (SNOW[2] - B) * k;
+    // A bright cell background makes snow read as a solid surface rather than scattered glyphs.
+    BK = BK + (0.62 - BK) * k;
+  }
 
-  const l = lampLight(ax, az, lx, lz);
+  const l = lampsOn > 0 ? lampLight(ax, az, lx, lz) * lampsOn : 0;
   if (l > 0) {
     const c = HOODS[hood].lamp;
     R += c[0] * 0.68 * l; G += c[1] * 0.6 * l; B += c[2] * 0.45 * l; BK += 0.3 * l;

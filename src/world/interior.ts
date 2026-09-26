@@ -9,6 +9,7 @@ import { type Builder, type Rect, type Side, LIGHT_LAMP, sideOf } from './build'
 import { BOX_E, BOX_N, BOX_S, BOX_W, FACE_STRIDE, FaceList } from './faces';
 import { type Program, Room } from './furniture';
 import { EYE_H } from './layout';
+import { drawOccupants } from './occupants';
 import { SIGN_CHAR_W, SIGN_H, SIGN_PAD, SIGN_TEXTS, TEXT_LIFT, TEXT_OPEN, signSeed, type RGB } from './signs';
 
 /** Wall thickness between the facade and the inner wall surface. */
@@ -33,8 +34,12 @@ export interface Level {
   /** Storey number on the facade (0 = ground). */
   k: number;
   name: string;
+  /** Room program name (e.g. 'CAFE') and its floor pattern, for sound. */
+  room: string;
+  floor: number;
   faces: Float32Array;
   lights: Float32Array;
+  people: Float32Array;
 }
 
 export interface Door {
@@ -353,7 +358,7 @@ export function enterable(B: Builder, spec: EnterSpec): void {
     }
     p.build(room);
     const name = k === 0 ? 'GROUND' : k === floors - 1 ? `TOP FLOOR ${k}` : `FLOOR ${k}`;
-    levels.push({ y, h: ceil - y, k, name: `${name} - ${p.name}`, faces: L.toArray(), lights: new Float32Array(lights) });
+    levels.push({ y, h: ceil - y, k, name: `${name} - ${p.name}`, room: p.name, floor: p.floor, faces: L.toArray(), lights: new Float32Array(lights), people: new Float32Array(room.people) });
   }
 
   const plug = new FaceList();
@@ -446,7 +451,7 @@ function doorLeaves(d: Door, cam: Camera): void {
  * `liftDoors` is how far the cab doors are closed (0 open, 1 shut); they stay shut while the cab moves,
  * so between floors there is never an opening to see through. Returns true when the camera is inside.
  */
-export function drawInterior(it: Interior, cam: Camera, liftDoors: number): boolean {
+export function drawInterior(it: Interior, cam: Camera, liftDoors: number, time: number): boolean {
   const inside = inRect(it, cam.x, cam.z) && cam.y < it.top;
   let cabY = 0;
   let inShaft = false;
@@ -456,6 +461,7 @@ export function drawInterior(it: Interior, cam: Camera, liftDoors: number): bool
     if (lv) {
       drawList(lv.faces);
       drawLights(lv.lights);
+      drawOccupants(lv.people, cam, time);
       cabY = lv.y;
     }
     if (it.lift && inRect(it.lift, cam.x, cam.z)) {
@@ -472,6 +478,7 @@ export function drawInterior(it: Interior, cam: Camera, liftDoors: number): bool
     }
     drawList(it.levels[0].faces);
     drawLights(it.levels[0].lights);
+    drawOccupants(it.levels[0].people, cam, time);
   }
   if (it.lift) {
     drawList(it.shaft);

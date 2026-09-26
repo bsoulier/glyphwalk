@@ -1,4 +1,5 @@
 import type { Camera } from '../render/camera';
+import { Cats } from './cats';
 import { City } from './city';
 import { Pedestrians } from './pedestrians';
 import { drawSignals } from './signals';
@@ -11,6 +12,7 @@ export class World {
   readonly skyCars = new Traffic(26, true);
   readonly peds = new Pedestrians(150);
   readonly rail = new Rail();
+  readonly cats = new Cats(this.city);
   /** Simulation clock; traffic signals and shuttles are functions of it. */
   time = 0;
 
@@ -29,6 +31,7 @@ export class World {
     this.cars.draw(cam, time, Math.min(cam.far, 240), hidden);
     this.skyCars.draw(cam, time, cam.far, hidden);
     this.peds.draw(cam, rain);
+    this.cats.draw(cam, time);
     this.rail.draw(cam);
     drawSignals(cam, this.time);
   }

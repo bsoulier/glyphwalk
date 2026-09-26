@@ -17,6 +17,28 @@ export let time = 0;
  */
 export const span = { du: 0 };
 
+/** Time of day: light on non-glowing surfaces, share of windows lit, street lamps on. */
+let lightR = 1;
+let lightG = 1;
+let lightB = 1;
+export let windowLit = 1;
+export let lampsOn = 1;
+
+/** Per-metre density of weather fog; 0 keeps the usual distance haze. */
+let fogExp = 0;
+
+export function setFogDensity(d: number): void {
+  fogExp = d;
+}
+
+export function setLighting(light: readonly [number, number, number], windows: number, lamps: number): void {
+  lightR = light[0];
+  lightG = light[1];
+  lightB = light[2];
+  windowLit = windows;
+  lampsOn = lamps;
+}
+
 export function beginSurface(
   fg: Uint32Array, bg: Uint32Array, fx: number, fy: number, far: number, t: number,
   haze: readonly [number, number, number],
@@ -47,8 +69,18 @@ export function putRaw(i: number, gl: number, r: number, g: number, b: number, b
  * makes surfaces read as solid instead of floating glyphs. Emissive cells resist fog so lights carry far.
  */
 export function put(i: number, gl: number, r: number, g: number, b: number, bgk: number, z: number, emissive: number): void {
+  if (emissive === 0) {
+    r *= lightR;
+    g *= lightG;
+    b *= lightB;
+  }
   let f = 1;
-  if (z > fogStart) {
+  if (fogExp > 0) {
+    if (z > 4) {
+      f = Math.exp((4 - z) * fogExp);
+      if (emissive > 0) f += (Math.sqrt(f) - f) * emissive;
+    }
+  } else if (z > fogStart) {
     const x = (z - fogStart) * fogInv;
     f = x >= 1 ? 0 : 1 - x * x;
     if (emissive > 0) f += (Math.sqrt(f) - f) * emissive;

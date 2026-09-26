@@ -5,7 +5,9 @@ import {
   FLOOR_CARPET, FLOOR_CHECKER, FLOOR_CONCRETE, FLOOR_PARQUET, FLOOR_TATAMI, FLOOR_TILES,
   GOODS_BAKERY, GOODS_BOOKS, GOODS_BOTTLES, GOODS_MIXED,
 } from '../render/interiors';
+import { hash3, mulberry32 } from '../core/hash';
 import { BOX_DEFAULT, BOX_SIDES, type FaceList } from './faces';
+import { POSE_CHAIR, POSE_STAFF, POSE_STAND, POSE_STOOL } from './occupants';
 import { SIGN_CHAR_W, SIGN_H, SIGN_PAD, SIGN_TEXTS, signSeed, type RGB } from './signs';
 
 /**
@@ -33,6 +35,12 @@ export class Room {
   readonly W: number;
   readonly D: number;
   readonly H: number;
+  /** Occupants, PERSON_STRIDE floats each (see occupants.ts). */
+  readonly people: number[] = [];
+  /** Chance that a seat is taken: shops are lively, homes mostly empty. */
+  busy = 0.4;
+  // A separate generator, so adding people never shifts where the furniture goes.
+  private readonly prng: () => number;
 
   constructor(
     private readonly f: RoomFrame,
@@ -50,6 +58,7 @@ export class Room {
     this.W = f.W;
     this.D = f.D;
     this.H = f.H;
+    this.prng = mulberry32(hash3(Math.round(f.ox * 10), Math.round(f.oz * 10), Math.round(f.y * 10) ^ 0x9e0));
     if (door) this.reserve(door[0] - 0.5, 0, door[1] + 0.5, 2.2);
     if (lift) {
       this.reserve(lift[0], lift[1], lift[2], lift[3]);
@@ -132,6 +141,20 @@ export class Room {
   pick<T>(list: readonly T[]): T {
     return list[Math.floor(this.rng() * list.length)];
   }
+
+  /** Someone at (a, d) looking along `facing` (chair codes). Standing people are solid. */
+  person(a: number, d: number, facing: number, pose: number): void {
+    const f = this.f;
+    const fa = [0, 1, 0, -1][facing], fd = [1, 0, -1, 0][facing];
+    const yaw = Math.atan2(f.ax * fa + f.dx * fd, f.az * fa + f.dz * fd);
+    this.people.push(f.ox + f.ax * a + f.dx * d, f.y, f.oz + f.az * a + f.dz * d, yaw, pose, Math.floor(this.prng() * 65536));
+    if (pose === POSE_STAND || pose === POSE_STAFF) this.solid(a - 0.25, d - 0.25, a + 0.25, d + 0.25, 1.8);
+  }
+
+  /** Fills a seat or spot with probability `busy * k`. */
+  maybe(a: number, d: number, facing: number, pose: number, k = 1): void {
+    if (this.prng() < this.busy * k) this.person(a, d, facing, pose);
+  }
 }
 
 export interface Program {
@@ -178,18 +201,21 @@ function table(R: Room, a: number, d: number, w: number, dd: number, h: number, 
 }
 
 /** Facing: the direction the sitter looks, 0 = +d, 1 = +a, 2 = -d, 3 = -a. */
-function chair(R: Room, a: number, d: number, facing: number, c: RGB): void {
+function chair(R: Room, a: number, d: number, facing: number, c: RGB, sit = 1): void {
   R.box(a - 0.21, d - 0.21, a + 0.21, d + 0.21, 0.42, 0.47, M_WOOD, c);
   R.box(a - 0.03, d - 0.03, a + 0.03, d + 0.03, 0, 0.42, M_PAINT, DARK, 0, BOX_SIDES);
   const fa = [0, 1, 0, -1][facing], fd = [1, 0, -1, 0][facing];
   const ba = a - fa * 0.19, bd = d - fd * 0.19;
   if (fa !== 0) R.box(ba - 0.025, d - 0.21, ba + 0.025, d + 0.21, 0.47, 0.95, M_WOOD, c, 0, BOX_SIDES);
   else R.box(a - 0.21, bd - 0.025, a + 0.21, bd + 0.025, 0.47, 0.95, M_WOOD, c, 0, BOX_SIDES);
+  R.maybe(a, d, facing, POSE_CHAIR, sit);
 }
 
-function stool(R: Room, a: number, d: number, c: RGB): void {
+/** `facing` is where a sitter would look (toward the counter); -1 leaves the stool empty. */
+function stool(R: Room, a: number, d: number, c: RGB, facing = -1): void {
   R.box(a - 0.18, d - 0.18, a + 0.18, d + 0.18, 0.7, 0.76, M_CLOTH, c);
   R.box(a - 0.03, d - 0.03, a + 0.03, d + 0.03, 0, 0.7, M_PAINT, STEEL, 0, BOX_SIDES);
+  if (facing >= 0) R.maybe(a, d, facing, POSE_STOOL);
 }
 
 function counter(R: Room, a0: number, d0: number, a1: number, d1: number, h: number, body: RGB, top: RGB): void {
@@ -295,6 +321,7 @@ function cabinet(R: Room, a: number, d: number, facing: number, c: RGB): void {
   const ka = a + fa * (ea + 0.15), kd = d + fd * (ed + 0.15);
   R.box(ka - (fa !== 0 ? 0.15 : hw), kd - (fa !== 0 ? hw : 0.15), ka + (fa !== 0 ? 0.15 : hw), kd + (fa !== 0 ? hw : 0.15), 0.82, 0.92, M_PAINT, darker(c, 0.5));
   R.solid(a - ea, d - ed, a + ea, d + ed, 1.85);
+  R.maybe(a + fa * (ea + 0.5), d + fd * (ed + 0.5), (facing + 2) % 4, POSE_STAND, 0.8);
 }
 
 /** Menu or shop sign on the back wall, repeating the sign outside. */
@@ -329,7 +356,7 @@ export const LOBBY: Program = {
       if (!R.take(a0, dR, a1, dR + 1.7)) continue;
       counter(R, a0, dR, a1, dR + 0.7, 1.1, WOODS[2], STONE_TOP);
       R.box(a0 + len / 2 - 0.25, dR + 0.35, a0 + len / 2 + 0.25, dR + 0.4, 1.1, 1.45, M_SCREEN, [120, 200, 255]);
-      chair(R, a0 + len / 2, dR + 1.2, 2, DARK);
+      chair(R, a0 + len / 2, dR + 1.2, 2, DARK, 3);
       break;
     }
     // Waiting area on the other side of the aisle: two sofas facing each other over a low table.
@@ -355,6 +382,7 @@ export const LOBBY: Program = {
 export const OFFICE: Program = {
   name: 'OFFICES', floor: FLOOR_CARPET, floorC: [70, 80, 96], wall: [196, 198, 200], light: [235, 245, 255],
   build(R) {
+    R.busy = 0.2;
     // Desks line the windows so everyone faces the view; the middle stays open.
     let n = 0;
     const max = 44;
@@ -383,8 +411,9 @@ export const LOUNGE: Program = {
     if (d1 - d0 > 2.5 && R.take(R.W - 2.9, d0, R.W, d1)) {
       counter(R, R.W - 2.3, d0, R.W - 1.7, d1, 1.1, [40, 30, 30], [30, 30, 34]);
       shelves(R, R.W - 0.45, d0, R.W - 0.05, d1, 2.1, 3, DARK, GOODS_BOTTLES);
-      for (let d = d0 + 0.5; d < d1 - 0.3; d += 0.9) stool(R, R.W - 2.7, d, [150, 40, 40]);
+      for (let d = d0 + 0.5; d < d1 - 0.3; d += 0.9) stool(R, R.W - 2.7, d, [150, 40, 40], 1);
       for (let d = d0 + 1; d < d1; d += 2.2) pendant(R, R.W - 2.0, d, WARM);
+      R.person(R.W - 1.1, (d0 + d1) / 2, 3, POSE_STAFF);
     }
     // Sofas turned toward the front windows, each with a low table between it and the glass.
     const fab = R.pick(FABRIC);
@@ -405,6 +434,7 @@ export const LOUNGE: Program = {
 export const HOTEL_ROOM: Program = {
   name: 'HOTEL SUITE', floor: FLOOR_CARPET, floorC: [120, 60, 60], wall: [214, 200, 176], light: [255, 225, 175],
   build(R) {
+    R.busy = 0.12;
     const dB = Math.max(2.3, R.D * 0.4);
     if (R.take(0, dB - 0.5, 2.6, dB + 2.1)) {
       bed(R, 0.05, dB, 2.1, dB + 1.6, 1, R.pick(FABRIC));
@@ -433,6 +463,7 @@ export const HOTEL_ROOM: Program = {
 export const LIVING: Program = {
   name: 'LIVING ROOM', floor: FLOOR_PARQUET, floorC: [150, 105, 65], wall: [220, 206, 178], light: [255, 220, 160],
   build(R) {
+    R.busy = 0.12;
     // Dining table by the front window.
     const ta = R.entry < R.W / 2 ? R.W * 0.68 : R.W * 0.32;
     if (R.take(ta - 1.3, 0.5, ta + 1.3, 2.6)) {
@@ -466,6 +497,7 @@ export const LIVING: Program = {
 export const BEDROOM: Program = {
   name: 'BEDROOM', floor: FLOOR_PARQUET, floorC: [130, 90, 58], wall: [200, 210, 220], light: [255, 225, 185],
   build(R) {
+    R.busy = 0.12;
     const dB = Math.max(2.2, R.D * 0.35);
     if (R.take(0, dB - 0.5, 2.6, dB + 2.1)) {
       bed(R, 0.05, dB, 2.1, dB + 1.6, 1, R.pick(FABRIC));
@@ -486,6 +518,7 @@ export const BEDROOM: Program = {
 export const TATAMI: Program = {
   name: 'TATAMI ROOM', floor: FLOOR_TATAMI, floorC: [190, 176, 120], wall: [226, 214, 190], light: [255, 215, 160],
   build(R) {
+    R.busy = 0.12;
     // Low table with a floor cushion on each side, under a paper lantern.
     const ta = R.W / 2 + (R.entry < R.W / 2 ? 0.8 : -0.8), td = Math.max(2.8, R.D * 0.42);
     if (R.take(ta - 1.4, td - 1.2, ta + 1.4, td + 1.2)) {
@@ -584,7 +617,7 @@ export const NOODLE_BAR: Program = {
     const c0 = R.D - 2.6, c1 = c0 + 0.6;
     if (R.take(0.4, c0 - 0.9, R.W - 0.4, R.D)) {
       counter(R, 0.5, c0, R.W - 0.5, c1, 1.0, [96, 54, 36], [180, 140, 96]);
-      for (let a = 0.9; a < R.W - 0.7; a += 0.8) stool(R, a, c0 - 0.45, [170, 40, 40]);
+      for (let a = 0.9; a < R.W - 0.7; a += 0.8) stool(R, a, c0 - 0.45, [170, 40, 40], 0);
       // Kitchen behind the counter: steel stove with glowing burners and pots, bowls on a shelf.
       const s1 = Math.max(1.4, R.W * 0.6);
       R.box(0.3, R.D - 0.75, s1, R.D - 0.05, 0, 0.9, M_PAINT, STEEL);
@@ -594,6 +627,9 @@ export const NOODLE_BAR: Program = {
         R.box(a - 0.17, R.D - 0.57, a + 0.17, R.D - 0.23, 0.93, 1.25, M_PAINT, [90, 90, 96]);
       }
       if (R.W - s1 > 1) shelves(R, s1 + 0.2, R.D - 0.45, R.W - 0.3, R.D - 0.05, 1.9, 3, WOODS[2], GOODS_MIXED);
+      // Cooks work the gap between the counter and the stove.
+      R.person(Math.min(s1 - 0.5, R.W * 0.35), c1 + 0.6, 2, POSE_STAFF);
+      if (R.W > 4.5) R.maybe(R.W * 0.72, c1 + 0.6, 2, POSE_STAFF, 1.5);
       for (let a = 1; a < R.W - 0.5; a += 1.4) {
         R.box(a - 0.18, c0 + 0.12, a + 0.18, c0 + 0.48, R.H - 0.95, R.H - 0.5, M_LAMP, [255, 70, 40]);
         R.light(a, c0 + 0.3, R.H - 1.0, [255, 90, 50]);
@@ -624,6 +660,7 @@ export const CAFE: Program = {
       R.box(a0 + 0.1, b0 + 0.05, Math.min(a0 + 1.4, R.W - 1.2), b0 + 0.55, 1.05, 1.35, M_GOODS, WHITE, GOODS_BAKERY);
       shelves(R, a0, R.D - 0.45, R.W - 0.3, R.D - 0.05, 2.0, 3, WOODS[2], GOODS_BOTTLES);
       menuBoard(R, (a0 + R.W) / 2, 2.15, [255, 230, 180]);
+      R.person((a0 + R.W) / 2 - 0.3, b0 + 0.92, 2, POSE_STAFF);
     }
     let n = 0;
     for (let d = 1.3; d < b0 - 1.1 && n < 12; d += 2.1) {
@@ -648,8 +685,9 @@ export const BAR: Program = {
     if (d1 - d0 > 1.5 && R.W >= 4 && R.take(R.W - 2.6, d0, R.W, end)) {
       counter(R, R.W - 2.0, d0, R.W - 1.4, d1, 1.1, [60, 36, 24], [90, 60, 40]);
       shelves(R, R.W - 0.45, d0, R.W - 0.05, end - 0.1, 2.1, 3, [40, 28, 20], GOODS_BOTTLES);
-      for (let d = d0 + 0.4; d < d1 - 0.2; d += 0.8) stool(R, R.W - 2.45, d, [120, 30, 30]);
+      for (let d = d0 + 0.4; d < d1 - 0.2; d += 0.8) stool(R, R.W - 2.45, d, [120, 30, 30], 1);
       for (let d = d0 + 0.8; d < d1; d += 1.8) pendant(R, R.W - 1.7, d, [255, 170, 90]);
+      R.person(R.W - 0.92, (d0 + d1) / 2, 3, POSE_STAFF);
     }
     const barrels = R.text >= 0 && ['TAVERN', 'INN', 'SAKE'].includes(SIGN_TEXTS[R.text]);
     for (let d = 2.6; d < R.D - 0.8; d += 1.8) {
@@ -657,8 +695,8 @@ export const BAR: Program = {
       if (barrels) {
         R.box(0.5, d - 0.32, 1.14, d + 0.32, 0, 1.0, M_WOOD, [110, 70, 40]);
         R.solid(0.5, d - 0.32, 1.14, d + 0.32, 1.0);
-        stool(R, 0.82, d - 0.62, [90, 60, 40]);
-        stool(R, 0.82, d + 0.62, [90, 60, 40]);
+        stool(R, 0.82, d - 0.62, [90, 60, 40], 0);
+        stool(R, 0.82, d + 0.62, [90, 60, 40], 2);
       } else {
         table(R, 0.8, d, 0.7, 0.7, 0.74, [60, 40, 30]);
         chair(R, 0.8, d - 0.55, 0, [80, 50, 35]);
@@ -680,6 +718,8 @@ export const BAKERY: Program = {
       R.box(0.35, d + 0.05, a1 - 0.05, d + 0.7, 0.9, 1.25, M_GOODS, WHITE, GOODS_BAKERY);
       R.box(a1 - 0.5, d + 0.2, a1 - 0.15, d + 0.55, 0.9, 1.15, M_PAINT, DARK);
       R.box(a1 - 0.45, d + 0.18, a1 - 0.2, d + 0.2, 1.0, 1.1, M_GLOW, [120, 255, 150]);
+      R.person(a1 * 0.5, d + 1.3, 2, POSE_STAFF);
+      R.maybe(a1 * 0.5 + 0.5, d - 0.65, 0, POSE_STAND, 1.5);
     }
     if (R.take(0.3, R.D - 0.5, R.W - 0.3, R.D)) shelves(R, 0.3, R.D - 0.45, R.W - 0.3, R.D - 0.05, 2.1, 4, WOODS[1], GOODS_BAKERY);
     if (R.take(0, 2.3, 0.5, d - 0.4)) shelves(R, 0.05, 2.3, 0.5, d - 0.4, 1.8, 3, WOODS[1], GOODS_BAKERY);
@@ -716,9 +756,16 @@ export const STORE: Program = {
       counter(R, a0, 0.8, a1, 1.35, 1.0, WOODS[0], STONE_TOP);
       R.box(a0 + 0.3, 0.95, a0 + 0.65, 1.25, 1.0, 1.25, M_PAINT, DARK);
       R.box(a0 + 0.34, 0.93, a0 + 0.61, 0.95, 1.1, 1.2, M_GLOW, [120, 255, 150]);
+      R.person((a0 + a1) / 2, 1.75, 2, POSE_STAFF);
       break;
     }
     menuBoard(R, R.W / 2, 2.2, [60, 60, 70]);
+    // Browsers in the side aisles, facing the shelves.
+    const span = R.D - 4.5;
+    if (span > 0) {
+      R.maybe(1.05, 3 + R.rng() * span, 3, POSE_STAND, 1.2);
+      R.maybe(R.W - 1.05, 3 + R.rng() * span, 1, POSE_STAND, 1.2);
+    }
   },
 };
 

@@ -9,24 +9,27 @@ import { LIGHT_STRIDE, POLE_STRIDE } from '../world/city';
 import { FACE_STRIDE } from '../world/faces';
 import { type Interior, drawInterior } from '../world/interior';
 import { drawBackground } from './background';
+import type { Daylight } from './daylight';
 import { beginMaterials } from './materials';
-import { beginRaster, drawFace, drawPoint, drawVLine, stats } from './raster';
+import { beginRaster, drawFace, drawPoint, drawVLine, setSnowCover, setSunLight, stats } from './raster';
+import { setFogDensity, setLighting } from './surface';
+import { FOG_DENSITY, type Weather } from './weather';
 import { glyph } from '../core/charset';
 
 export interface FrameEnv {
   time: number;
-  rain: boolean;
+  weather: Weather;
   flash: number;
   propDist: number;
   hidden: Vehicle | null;
   /** How far the doors of the lift the camera rides in are closed, 0 to 1. */
   liftDoors: number;
+  sky: Daylight;
 }
 
-// Must match the sky colour at the horizon in background.ts so fogged geometry melts into the sky.
-const HAZE: readonly [number, number, number] = [28, 25, 43];
 const G_STAR = glyph('*');
 const G_o = glyph('o');
+let snowCover = 0;
 
 /**
  * Order matters for speed: geometry goes first (front to back) so the ground/sky pass only
@@ -34,7 +37,13 @@ const G_o = glyph('o');
  */
 export function renderScene(fb: FrameBuffer, cam: Camera, world: World, env: FrameEnv, rain: Rain): void {
   beginRaster(fb, cam);
-  beginMaterials(fb.fg, fb.bg, cam.fx, cam.fy, cam.far, env.time, HAZE);
+  // Fog fades toward the sky's horizon colour, so distant geometry melts into the sky at any hour.
+  beginMaterials(fb.fg, fb.bg, cam.fx, cam.fy, cam.far, env.time, env.sky.horizon);
+  setLighting(env.sky.light, env.sky.windows, env.sky.lamps);
+  setSunLight(env.sky.sun, env.sky.day);
+  setFogDensity(env.weather === 'fog' ? FOG_DENSITY : 0);
+  snowCover = env.weather === 'snow' ? 0.8 : 0;
+  setSnowCover(snowCover);
   fb.depth.fill(0);
   stats.faces = 0;
   stats.actors = 0;
@@ -46,7 +55,7 @@ export function renderScene(fb: FrameBuffer, cam: Camera, world: World, env: Fra
     const it = drawBlock(b, cam, env);
     if (it) indoors = it;
   }
-  world.drawActors(cam, env.time, env.rain, env.hidden);
+  world.drawActors(cam, env.time, env.weather === 'rain', env.hidden);
   drawBackground(fb, cam, env);
   // Indoors, only drops beyond the far wall can be outside; nearer ones would fall in the room.
   if (rain.on) rain.draw(fb, indoors ? farCorner(indoors, cam) : 0);
@@ -63,7 +72,12 @@ function drawBlock(b: Block, cam: Camera, env: FrameEnv): Interior | null {
   const f = b.faces;
   for (let o = 0; o < f.length; o += FACE_STRIDE) drawFace(f, o);
   let indoors: Interior | null = null;
-  for (const it of b.interiors) if (drawInterior(it, cam, env.liftDoors)) indoors = it;
+  if (b.interiors.length > 0) {
+    // It never snows on the furniture.
+    setSnowCover(0);
+    for (const it of b.interiors) if (drawInterior(it, cam, env.liftDoors, env.time)) indoors = it;
+    setSnowCover(snowCover);
+  }
   const near = b.dist < env.propDist;
   if (near) {
     const p = b.props;
@@ -87,8 +101,10 @@ function drawBlock(b: Block, cam: Camera, env: FrameEnv): Interior | null {
       case LIGHT_FAR:
         if (!near) drawPoint(L[o], L[o + 1], L[o + 2], G_STAR, L[o + 3], L[o + 4], L[o + 5], 0.45, 1);
         break;
-      default:
-        if (!near || b.dist > 30) drawPoint(L[o], L[o + 1], L[o + 2], G_STAR, L[o + 3], L[o + 4], L[o + 5], 0.45, 1);
+      default: {
+        const on = env.sky.lamps;
+        if (on > 0.05 && (!near || b.dist > 30)) drawPoint(L[o], L[o + 1], L[o + 2], G_STAR, L[o + 3] * on, L[o + 4] * on, L[o + 5] * on, 0.45, 1);
+      }
     }
   }
   return indoors;

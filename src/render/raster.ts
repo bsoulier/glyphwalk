@@ -1,6 +1,7 @@
 import type { Camera } from './camera';
 import type { FrameBuffer } from './framebuffer';
-import { M_SIGN, put, shade } from './materials';
+import { M_CLOTH, M_GLOW, M_LAMP, M_SCREEN, M_SIGN, M_SKIN, M_VSIGN, M_WATER, put, shade } from './materials';
+import { SNOW } from './weather';
 import { span } from './surface';
 import { FACE_STRIDE } from '../world/faces';
 
@@ -15,7 +16,27 @@ let fx = 1, fy = 1, cxs = 0, cys = 0;
 let kx = 1, ky = 1, kxN = 1, kyN = 1;
 let near = 0.1, far = 100;
 
-const LX = -0.447, LY = 0.744, LZ = -0.496;
+/** How white upward faces turn in snow; the scene sets 0 while drawing interiors. */
+let snowK = 0;
+/** Materials that never carry snow: lights, signs, and people and animals (it would read as white hair). */
+const NO_SNOW: boolean[] = [];
+for (const m of [M_GLOW, M_LAMP, M_SIGN, M_VSIGN, M_SKIN, M_CLOTH, M_SCREEN, M_WATER]) NO_SNOW[m] = true;
+
+export function setSnowCover(k: number): void {
+  snowK = k;
+}
+
+const NIGHT_L = [-0.447, 0.744, -0.496] as const;
+let LX = NIGHT_L[0], LY = NIGHT_L[1], LZ = NIGHT_L[2];
+
+/** Faces are shaded toward the sun by day and toward the old fixed key light by night. */
+export function setSunLight(sun: readonly [number, number, number], day: number): void {
+  const x = NIGHT_L[0] + (sun[0] - NIGHT_L[0]) * day;
+  const y = NIGHT_L[1] + (Math.max(0.2, sun[1]) - NIGHT_L[1]) * day;
+  const z = NIGHT_L[2] + (sun[2] - NIGHT_L[2]) * day;
+  const len = Math.hypot(x, y, z);
+  LX = x / len; LY = y / len; LZ = z / len;
+}
 
 export function beginRaster(fb: FrameBuffer, cam: Camera): void {
   depth = fb.depth;
@@ -120,7 +141,12 @@ export function drawFace(d: ArrayLike<number>, o: number): void {
   const dot = nx * LX + ny * LY + nz * LZ;
   const sh = 0.58 + 0.42 * (dot > 0 ? dot : 0);
   const mat = d[o + 23] | 0, seed = d[o + 27] | 0;
-  const r = d[o + 24], g = d[o + 25], b = d[o + 26];
+  let r = d[o + 24], g = d[o + 25], b = d[o + 26];
+  // Snow settles fully on flat tops, partly on pitched roofs, and slides off anything steeper than ~75 deg.
+  if (snowK > 0 && ny > 0.25 && !NO_SNOW[mat]) {
+    const k = snowK * Math.min(1, (ny - 0.25) * 2);
+    r += (SNOW[0] - r) * k; g += (SNOW[1] - g) * k; b += (SNOW[2] - b) * k;
+  }
   stats.faces++;
   for (let k = 1; k < n - 1; k++) rasterTri(0, k, k + 1, mat, r, g, b, sh, seed);
 }
