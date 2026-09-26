@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Glyphwalk</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23000'/%3E%3Ctext x='16' y='24' font-family='monospace' font-size='22' fill='%237dffb0' text-anchor='middle'%3E%23%3C/text%3E%3C/svg%3E" />
+  </head>
+  <body>
+    <canvas id="screen"></canvas>
+
+    <aside id="hud">
+      <div class="title">GLYPHWALK <span class="dim">// v0.1</span></div>
+      <pre id="stats"></pre>
+      <label>Cell size <select id="sel-cell"></select></label>
+      <label>Target <select id="sel-fps"></select></label>
+      <label>Draw distance <select id="sel-dist"></select></label>
+      <label>Field of view <select id="sel-fov"></select></label>
+      <label>Style <select id="sel-style"></select></label>
+      <pre class="help">
+CLICK     capture mouse (Esc frees it)
+WASD      move    SHIFT run
+Q / E     down / up (fly mode)
+V  1-6    camera mode
+N         next cam / vehicle
+[  ]      denser / faster cells
+R rain  G style  T scanlines
+F fullscreen      H hide this panel</pre>
+    </aside>
+
+    <pre id="osd"></pre>
+    <div id="hint">H panel &middot; V mode &middot; [ ] cell size</div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
