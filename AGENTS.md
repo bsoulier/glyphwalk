@@ -85,6 +85,10 @@ glow (lamps, signs, windows at night).
   format bumps `PROTOCOL`; deploy the server before the site. Room logic stays in `server/src/zone.ts`, free of
   Cloudflare APIs, so it is tested in Node. Idle and hidden clients must keep disconnecting: they are what keeps the
   server cheap.
+- **No secrets in the repository.** `.env.production` holds public values only (the online server URL and the
+  GoatCounter code, both visible in the page); `tests/unit/secrets.test.ts` fails on anything else there, on files
+  like `.env`, `.dev.vars` or keys, and on token-shaped strings in any tracked file. Cloudflare credentials stay in
+  `wrangler login` (outside the repository); if the Worker ever needs a secret, use `wrangler secret put`.
 - **Usage counts.** Only through `trackEvent` in `ui/analytics.ts` (GoatCounter's endpoint, no third-party script, no
   cookies), once per visit per event name, and never with anything personal in the name.
 - **HUD.** The panel keeps only the district, time, weather, events and volume in view; everything else goes in its

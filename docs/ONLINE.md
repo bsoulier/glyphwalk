@@ -97,6 +97,10 @@ Then point the site at it: set `VITE_ONLINE_URL=wss://glyphwalk-online.<your-sub
 
 If the page moves to another address, add it to `ALLOWED_ORIGINS` and run `npx wrangler deploy` again.
 
+The server needs no secrets. `wrangler login` keeps the Cloudflare credentials in your home folder, never in the
+repository; if one is ever needed, store it with `npx wrangler secret put NAME`, not in `wrangler.jsonc` or a committed
+file. The server URL itself is public (every page has to know it); what protects the server is described under Safety.
+
 ### Changing the protocol
 
 Both ends share [`src/net/protocol.ts`](../src/net/protocol.ts). Anything incompatible must bump `PROTOCOL`: the

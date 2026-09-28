@@ -166,11 +166,15 @@ export class Hud {
     this.nerdsCheck.checked = s.nerds;
     this.nerds.hidden = !s.nerds;
     this.root.classList.toggle('hidden', !s.hud);
-    for (const d of this.sections) {
-      const open = s.open.includes(d.dataset.section ?? '');
-      if (d.open !== open) d.open = open;
-    }
     this.onlineCheck.checked = s.online;
+  }
+
+  /**
+   * Reopens the sections that were open last time. Only at startup: afterwards the panel is the truth, since
+   * its toggle events arrive a moment after a click and a sync in between would undo the click.
+   */
+  openSections(ids: readonly string[]): void {
+    for (const d of this.sections) d.open = ids.includes(d.dataset.section ?? '');
   }
 
   /** The online row shows only when the build has a server; `name` is the player's generated name. */

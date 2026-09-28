@@ -308,6 +308,7 @@ function layout(): void {
 window.addEventListener('resize', layout);
 layout();
 hud.sync(settings, quality.cellSetting);
+hud.openSections(settings.open);
 hud.setOnline(online !== null, online ? playerName(online.myId) : '');
 
 const hudEl = document.getElementById('hud') as HTMLElement;
