@@ -4,10 +4,16 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-09-01",
   "durable_objects": {
-    "bindings": [{ "name": "ZONES", "class_name": "Zone" }]
+    "bindings": [
+      { "name": "ZONES", "class_name": "Zone" },
+      { "name": "STATS", "class_name": "Stats" }
+    ]
   },
-  // SQLite-backed classes are the kind the Workers Free plan allows; the zones never write to storage.
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Zone"] }],
+  // SQLite-backed classes are the kind the Workers Free plan allows; neither writes to storage (zones only set alarms).
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["Zone"] },
+    { "tag": "v2", "new_sqlite_classes": ["Stats"] }
+  ],
   "vars": {
     "ALLOWED_ORIGINS": "https://bsoulier.github.io,http://localhost:5173,http://localhost:4173"
   }

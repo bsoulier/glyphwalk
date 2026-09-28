@@ -455,7 +455,9 @@ function onlineText(): string {
   switch (online.status) {
     case 'online': {
       const n = online.count;
-      return n === 0 ? 'nobody near you yet' : `${n} player${n === 1 ? '' : 's'} near you`;
+      // The city's count includes the player and lags by up to a minute, so it never reads below who is in sight.
+      const city = Math.max(online.city?.total ?? 0, n + 1);
+      return city > 1 ? `${n === 0 ? 'nobody near you' : `${n} near you`}, ${city} in the city` : 'nobody near you yet';
     }
     case 'connecting': return 'connecting...';
     case 'paused': return 'paused while away';
@@ -754,6 +756,8 @@ function updateHud(): void {
   const district = HOODS[hood].name;
   const indoors = player.inside(world);
   hud.setHood(hood);
+  online?.setHood(hood);
+  hud.setHoodCounts(online?.status === 'online' ? online.city?.hoods ?? null : null);
   trackEvent(`district-${district.toLowerCase().replace(/\s+/g, '-')}`);
   trackEvent(`mode-${player.mode}`);
   hud.setStats([

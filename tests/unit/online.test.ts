@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Online, Remote } from '../../src/net/online';
-import { CLOSE_FULL, SEND_MS, ZONE, decodeState, encodeRefusal, encodeUpdate } from '../../src/net/protocol';
+import { CLOSE_FULL, SEND_MS, ZONE, decodeState, encodeRefusal, encodeStats, encodeUpdate } from '../../src/net/protocol';
 
 /** Just enough of a browser WebSocket to drive the client by hand. */
 class FakeSocket {
@@ -112,6 +112,20 @@ describe('online connections', () => {
     ws.onmessage?.({ data: encodeRefusal(CLOSE_FULL) });
     net.update(200, me, true, true);
     expect(FakeSocket.all.map((s) => s.param('layer'))).toEqual(['0', '1']);
+  });
+
+  it('tells its rooms the district when it changes, and keeps the city head count', () => {
+    const net = new Online('wss://example.test', 1, 42);
+    net.setHood(2);
+    net.update(0, me, true, true);
+    const ws = FakeSocket.all[0];
+    ws.onopen?.();
+    net.setHood(2);
+    net.setHood(4);
+    const hoods = ws.sent.filter((d): d is ArrayBuffer => d instanceof ArrayBuffer && d.byteLength === 2).map((d) => new Uint8Array(d)[1]);
+    expect(hoods).toEqual([2, 4]);
+    ws.onmessage?.({ data: encodeStats({ total: 12, hoods: [[4, 9], [0, 3]] }) });
+    expect(net.city).toEqual({ total: 12, hoods: [[4, 9], [0, 3]] });
   });
 
   it('lets go of the server while paused or switched off', () => {

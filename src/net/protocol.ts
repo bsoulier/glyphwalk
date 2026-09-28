@@ -29,14 +29,21 @@ export const EMOTE_GAP_MS = 2000;
 export const MODE_COUNT = 6;
 export const MODE_WALK = 0, MODE_FLY = 1, MODE_CCTV = 2, MODE_TAXI = 3, MODE_SKY = 4, MODE_RAIL = 5;
 
-// Client to server.
+// Client to server. New message types need the server deployed before the site that sends them.
 export const C_STATE = 1;
 export const C_EMOTE = 2;
+/** The district the player is in, sent when it changes; only used for the city-wide head count. */
+export const C_HOOD = 3;
 export const STATE_BYTES = 13;
 export const EMOTE_BYTES = 2;
+export const HOOD_BYTES = 2;
+/** District of a player whose page never said (older pages). */
+export const HOOD_UNKNOWN = 255;
 // Server to client.
 export const S_UPDATE = 1;
 export const S_REFUSED = 2;
+/** How many players are online in the whole city, and in each district. */
+export const S_STATS = 3;
 const ENTRY_BYTES = 16;
 
 /** WebSocket close codes the server uses; the client reacts to each differently. */
@@ -118,6 +125,51 @@ export function decodeState(v: DataView, into: PlayerState): boolean {
   into.yaw = v.getUint8(11);
   into.mode = mode;
   return true;
+}
+
+export function encodeHood(k: number): ArrayBuffer {
+  const buf = new ArrayBuffer(HOOD_BYTES);
+  const v = new DataView(buf);
+  v.setUint8(0, C_HOOD);
+  v.setUint8(1, k);
+  return buf;
+}
+
+/** District index from a district message, or -1. */
+export function decodeHood(v: DataView): number {
+  if (v.byteLength !== HOOD_BYTES || v.getUint8(0) !== C_HOOD) return -1;
+  const k = v.getUint8(1);
+  return k < HOOD_UNKNOWN ? k : -1;
+}
+
+/** City-wide head count: the total, and [district, players] for districts with anyone in them. */
+export interface CityStats {
+  total: number;
+  hoods: [number, number][];
+}
+
+export function encodeStats(s: CityStats): ArrayBuffer {
+  const n = Math.min(255, s.hoods.length);
+  const buf = new ArrayBuffer(4 + n * 3);
+  const v = new DataView(buf);
+  v.setUint8(0, S_STATS);
+  v.setUint16(1, Math.min(65535, s.total), true);
+  v.setUint8(3, n);
+  for (let k = 0; k < n; k++) {
+    v.setUint8(4 + k * 3, s.hoods[k][0]);
+    v.setUint16(5 + k * 3, Math.min(65535, s.hoods[k][1]), true);
+  }
+  return buf;
+}
+
+export function decodeStats(buf: ArrayBuffer): CityStats | null {
+  const v = new DataView(buf);
+  if (v.byteLength < 4 || v.getUint8(0) !== S_STATS) return null;
+  const n = v.getUint8(3);
+  if (v.byteLength !== 4 + n * 3) return null;
+  const hoods: [number, number][] = [];
+  for (let k = 0; k < n; k++) hoods.push([v.getUint8(4 + k * 3), v.getUint16(5 + k * 3, true)]);
+  return { total: v.getUint16(1, true), hoods };
 }
 
 /** Emote index from an emote message, or -1. */

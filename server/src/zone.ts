@@ -1,6 +1,6 @@
 import {
-  C_EMOTE, C_STATE, CLOSE_BAD, CLOSE_FLOOD, CLOSE_FULL, CLOSE_TAKEN, EMOTE_GAP_MS, MAX_PEERS, MAX_SEEN, SEE, ZONE,
-  type WireEntry, decodeEmote, decodeState, encodeUpdate, zoneOf,
+  C_EMOTE, C_HOOD, C_STATE, CLOSE_BAD, CLOSE_FLOOD, CLOSE_FULL, CLOSE_TAKEN, EMOTE_GAP_MS, HOOD_UNKNOWN, MAX_PEERS, MAX_SEEN,
+  SEE, ZONE, type WireEntry, decodeEmote, decodeHood, decodeState, encodeUpdate, zoneOf,
 } from '../../src/net/protocol';
 
 /** Where a zone sends a client its updates: the WebSocket, or a stand-in in tests. */
@@ -24,6 +24,8 @@ export class Peer implements WireEntry {
   /** Heading as a byte, as on the wire. */
   yaw = 0;
   mode = 0;
+  /** District, for the city-wide head count only. */
+  hood = HOOD_UNKNOWN;
   /** Has sent where it is; until then it neither is seen nor is sent anything. */
   placed = false;
   /** Stands in this zone, so others see it here; otherwise it is only watching across the edge. */
@@ -59,6 +61,8 @@ export class ZoneCore {
   readonly peers = new Map<number, Peer>();
   /** Something happened since the last tick, so one is due. */
   dirty = false;
+  /** Who stands here, or in which district, changed since the head count was last taken. */
+  countChanged = false;
   private readonly emotes: { id: number; k: number; from: Peer }[] = [];
   private readonly grid = new Map<number, Peer[]>();
   private readonly spare: Peer[][] = [];
@@ -88,8 +92,9 @@ export class ZoneCore {
   restore(id: number, link: Link, saved: readonly number[] | null, now: number): Peer | null {
     const p = this.join(id, link, now);
     if (typeof p === 'number') return null;
-    if (saved && saved.length === 5) {
+    if (saved && saved.length >= 5) {
       [p.x, p.z, p.y, p.yaw, p.mode] = saved;
+      if (saved.length > 5) p.hood = saved[5];
       this.place(p);
     }
     return p;
@@ -99,6 +104,14 @@ export class ZoneCore {
     if (this.peers.get(p.id) !== p) return;
     this.peers.delete(p.id);
     this.dirty = true;
+    if (p.placed && p.home) this.countChanged = true;
+  }
+
+  /** Players standing in this zone, as [district, players] pairs: each player counts in one zone only. */
+  count(): [number, number][] {
+    const by = new Map<number, number>();
+    for (const p of this.peers.values()) if (p.placed && p.home) by.set(p.hood, (by.get(p.hood) ?? 0) + 1);
+    return [...by];
   }
 
   /** Handles one message. Returns 0, or a close code the caller should disconnect the client with. */
@@ -124,16 +137,26 @@ export class ZoneCore {
         this.dirty = true;
         return 0;
       }
+      case C_HOOD: {
+        const k = decodeHood(v);
+        if (k < 0) return CLOSE_BAD;
+        if (k !== p.hood && p.placed && p.home) this.countChanged = true;
+        p.hood = k;
+        p.unsaved = true;
+        return 0;
+      }
       default:
         return CLOSE_BAD;
     }
   }
 
   private place(p: Peer): void {
+    const counted = p.placed && p.home;
     p.placed = true;
     p.moved = true;
     p.unsaved = true;
     p.home = zoneOf(p.x) === this.zx && zoneOf(p.z) === this.zz;
+    if (p.home !== counted) this.countChanged = true;
     this.dirty = true;
   }
 

@@ -2,9 +2,9 @@ import type { RGB } from '../world/signs';
 import { newOnlineId } from './identity';
 import { playerColor, playerName } from './names';
 import {
-  CLOSE_BAD, CLOSE_FLOOD, CLOSE_FULL, CLOSE_OUTDATED, CLOSE_TAKEN, EMOTE_GAP_MS, MAX_LAYERS, PROTOCOL, type PlayerState,
-  SEE, SEND_MS, WATCH_SEND_MS, type UpdateHandler, decodeRefusal, decodeUpdate, encodeEmote, encodeState, yawToByte, zoneOf,
-  zonesNear,
+  CLOSE_BAD, CLOSE_FLOOD, CLOSE_FULL, CLOSE_OUTDATED, CLOSE_TAKEN, type CityStats, EMOTE_GAP_MS, MAX_LAYERS, PROTOCOL,
+  type PlayerState, SEE, SEND_MS, WATCH_SEND_MS, type UpdateHandler, decodeRefusal, decodeStats, decodeUpdate, encodeEmote,
+  encodeHood, encodeState, yawToByte, zoneOf, zonesNear,
 } from './protocol';
 
 export type OnlineStatus = 'off' | 'connecting' | 'online' | 'paused' | 'offline' | 'outdated';
@@ -141,6 +141,8 @@ function sameState(a: PlayerState, b: PlayerState): boolean {
 export class Online {
   status: OnlineStatus = 'connecting';
   readonly others = new Map<number, Remote>();
+  /** Everyone online in this city, and per district, as the server last said (every 45 s or so). */
+  city: CityStats | null = null;
   /** Someone in sight sent an emote. */
   onEmote: ((r: Remote, k: number) => void) | null = null;
   /** The server gave our id to someone else (two tabs), so a new one was drawn. */
@@ -151,6 +153,7 @@ export class Online {
   /** The time given to the last `update`; socket events are stamped with it. */
   private clock = 0;
   private homeKey = '';
+  private hood = -1;
   private readonly list: Remote[] = [];
 
   constructor(private readonly url: string, private readonly seed: number, private id: number) {}
@@ -163,6 +166,13 @@ export class Online {
   setId(id: number): void {
     this.id = id;
     for (const link of this.links.values()) link.ws?.close(1000);
+  }
+
+  /** The district the player is in, for the city's head count; the rooms hear only when it changes. */
+  setHood(k: number): void {
+    if (k === this.hood) return;
+    this.hood = k;
+    for (const link of this.links.values()) if (link.open) link.ws?.send(encodeHood(k));
   }
 
   /** Players in sight (not counting ones that just went). */
@@ -298,6 +308,7 @@ export class Online {
       link.sent = null;
       link.lastSend = 0;
       link.wasHome = false;
+      if (this.hood >= 0) ws.send(encodeHood(this.hood));
     };
     ws.onmessage = (e: MessageEvent) => {
       if (typeof e.data === 'string') {
@@ -307,7 +318,7 @@ export class Online {
       if (!(e.data instanceof ArrayBuffer)) return;
       const refused = decodeRefusal(e.data);
       if (refused === 0) {
-        decodeUpdate(e.data, handler);
+        if (!decodeUpdate(e.data, handler)) this.city = decodeStats(e.data) ?? this.city;
         return;
       }
       ws.onclose = null;
@@ -362,5 +373,6 @@ export class Online {
   private closeAll(): void {
     for (const link of [...this.links.values()]) this.dropLink(link);
     this.others.clear();
+    this.city = null;
   }
 }

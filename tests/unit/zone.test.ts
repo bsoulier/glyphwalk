@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { type Link, type Peer, ZoneCore } from '../../server/src/zone';
 import {
-  CLOSE_BAD, CLOSE_FLOOD, CLOSE_FULL, CLOSE_TAKEN, EMOTE_GAP_MS, MAX_SEEN, SEE, ZONE, decodeUpdate, encodeEmote, encodeState,
+  CLOSE_BAD, CLOSE_FLOOD, CLOSE_FULL, CLOSE_TAKEN, EMOTE_GAP_MS, MAX_SEEN, SEE, ZONE, decodeUpdate, encodeEmote, encodeHood,
+  encodeState,
 } from '../../src/net/protocol';
+import { STALE_MS, StatsCore } from '../../server/src/stats';
 
 /** A client's side of the socket: everything the zone sent it, decoded. */
 class Client implements Link {
@@ -128,6 +130,23 @@ describe('zone server', () => {
     expect(a.seen.has(2) && b.seen.has(1)).toBe(true);
   });
 
+  it('counts who stands in the zone, by district, and notices when that changes', () => {
+    const zone = new ZoneCore(0, 0);
+    const a = join(zone, 1, 100, 100);
+    join(zone, 2, ZONE + 20, 100);
+    expect(zone.receive(a.peer, encodeHood(3), clock)).toBe(0);
+    expect(zone.count()).toEqual([[3, 1]]);
+    zone.countChanged = false;
+    move(zone, a.peer, 101, 100);
+    expect(zone.countChanged).toBe(false);
+    expect(zone.receive(a.peer, encodeHood(5), clock)).toBe(0);
+    expect(zone.countChanged).toBe(true);
+    zone.countChanged = false;
+    zone.leave(a.peer);
+    expect(zone.countChanged).toBe(true);
+    expect(zone.count()).toEqual([]);
+  });
+
   it('keeps a full room of moving players cheap', () => {
     const zone = new ZoneCore(0, 0);
     const peers: Peer[] = [];
@@ -140,5 +159,15 @@ describe('zone server', () => {
     }
     const perTick = (performance.now() - t0) / 10;
     expect(perTick).toBeLessThan(50);
+  });
+});
+
+describe('city head count', () => {
+  it('adds up the rooms, busiest district first, and forgets empty or silent ones', () => {
+    const city = new StatsCore();
+    city.report('0/0/0', [[0, 3], [1, 1]], 0);
+    expect(city.report('1/0/0', [[1, 4]], 10)).toEqual({ total: 8, hoods: [[1, 5], [0, 3]] });
+    expect(city.report('0/0/0', [], 20)).toEqual({ total: 4, hoods: [[1, 4]] });
+    expect(city.totals(10 + STALE_MS + 1)).toEqual({ total: 0, hoods: [] });
   });
 });

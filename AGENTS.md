@@ -32,7 +32,7 @@ changes under `server/` or `src/net/`, also `cd server && npm run typecheck`.
 | `src/game/` | Player and camera modes, keyboard/mouse input, touch controls, auto tour. |
 | `src/ui/` | HUD panel, settings persistence, quality ladder, photo mode, GIF encoder, share links, resume, PWA install, toasts, usage counts (`analytics.ts`). |
 | `src/net/` | Playing online: the wire format shared with the server (`protocol.ts`), generated names, the client's zone connections and smoothing (`online.ts`). Other players are drawn by `world/others.ts`. |
-| `server/` | The online server: a Cloudflare Worker (`src/index.ts`) and the room logic (`src/zone.ts`, no Cloudflare dependency, unit tested). See [docs/ONLINE.md](docs/ONLINE.md). |
+| `server/` | The online server: a Cloudflare Worker (`src/index.ts`), the room logic (`src/zone.ts`) and the city-wide head count (`src/stats.ts`), both free of Cloudflare APIs and unit tested. See [docs/ONLINE.md](docs/ONLINE.md). |
 | `.env.production` | Build settings for the published site: the online server URL and the GoatCounter code (public; empty turns them off). |
 | `public/` | Manifest and icons; copied to the build and precached by the service worker. |
 | `tests/unit/` | Vitest tests. `storage.ts` stubs `localStorage`. |

@@ -3,8 +3,9 @@ import { CHARSET } from '../../src/core/charset';
 import { MODES } from '../../src/game/player';
 import { allNameWords, playerName } from '../../src/net/names';
 import {
-  EMOTES, MODE_COUNT, MODE_FLY, MODE_RAIL, MODE_SKY, MODE_TAXI, MODE_WALK, type PlayerState, SEE, ZONE,
-  byteToYaw, decodeEmote, decodeState, decodeUpdate, encodeEmote, encodeState, encodeUpdate, yawToByte, zoneOf, zonesNear,
+  EMOTES, HOOD_UNKNOWN, MODE_COUNT, MODE_FLY, MODE_RAIL, MODE_SKY, MODE_TAXI, MODE_WALK, type PlayerState, SEE, ZONE,
+  byteToYaw, decodeEmote, decodeHood, decodeState, decodeStats, decodeUpdate, encodeEmote, encodeHood, encodeState,
+  encodeStats, encodeUpdate, yawToByte, zoneOf, zonesNear,
 } from '../../src/net/protocol';
 
 function roundTrip(s: PlayerState): PlayerState {
@@ -62,6 +63,16 @@ describe('online protocol', () => {
     ]);
     const nothing = { state: () => undefined, gone: () => undefined, emote: () => undefined };
     expect(decodeUpdate(buf.slice(0, buf.byteLength - 1), nothing)).toBe(false);
+  });
+
+  it('carries districts and the city head count', () => {
+    expect(decodeHood(new DataView(encodeHood(7)))).toBe(7);
+    expect(decodeHood(new DataView(encodeHood(HOOD_UNKNOWN)))).toBe(-1);
+    const city = { total: 1234, hoods: [[0, 1000], [8, 234]] as [number, number][] };
+    expect(decodeStats(encodeStats(city))).toEqual(city);
+    expect(decodeStats(encodeStats(city).slice(0, 6))).toBeNull();
+    const nothing = { state: () => undefined, gone: () => undefined, emote: () => undefined };
+    expect(decodeUpdate(encodeStats(city), nothing)).toBe(false);
   });
 
   it('finds the zones a view overlaps', () => {

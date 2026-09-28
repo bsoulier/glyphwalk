@@ -92,7 +92,8 @@ Everything is remembered, including where you were and which sections were open.
 When the online server is switched on, you see the other players near you: figures in bright shirts with a name tag,
 or their cab when they ride. There is no chat. Everyone gets a generated name (`COSMIC GECKO`) and a fixed set of
 emotes, from "hello" and "follow me" to a dance and a meow, so there is nothing to moderate. A shared link drops a
-friend right next to you. It can be switched off in the panel, and [docs/ONLINE.md](docs/ONLINE.md) explains how it
+friend right next to you. The panel shows how many players are online in the whole city and in each district, so you
+can head where the people are. It can be switched off in the panel, and [docs/ONLINE.md](docs/ONLINE.md) explains how it
 works and scales.
 
 ## Privacy

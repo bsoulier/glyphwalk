@@ -79,6 +79,7 @@ export class Hud {
   private readonly goal = $('goal');
   private readonly prompt = $('prompt');
   private promptKey = '';
+  private countsKey = '';
   private readonly sections = Array.from(this.root.querySelectorAll<HTMLDetailsElement>('details[data-section]'));
 
   constructor(handlers: HudHandlers) {
@@ -204,6 +205,18 @@ export class Hud {
       this.prompt.append(action);
     });
     this.prompt.classList.toggle('on', items.length > 0);
+  }
+
+  /** Shows how many players are online in each district next to its name; null hides the counts. */
+  setHoodCounts(counts: readonly (readonly [number, number])[] | null): void {
+    const key = counts ? counts.map((c) => c.join(':')).join(',') : '';
+    if (key === this.countsKey) return;
+    this.countsKey = key;
+    const by = new Map(counts ?? []);
+    for (const o of this.hood.options) {
+      const k = Number(o.value), n = by.get(k) ?? 0;
+      o.textContent = n > 0 ? `${HOODS[k].name} (${n} online)` : HOODS[k].name;
+    }
   }
 
   /** Reflects the district under the camera, unless the user is currently choosing one. */

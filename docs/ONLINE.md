@@ -18,6 +18,25 @@ vocabulary means nothing anyone sends can be offensive. When adding emotes, appe
 [`src/net/protocol.ts`](../src/net/protocol.ts) and keep them just as harmless; name words live in
 [`src/net/names.ts`](../src/net/names.ts) and must stay harmless in any pairing.
 
+## Who is online
+
+The ONLINE line in the panel reads like `3 near you, 57 in the city`, and the District list shows how many players
+are in each district (`JAPANTOWN (12 online)`), so it doubles as a way to go where people are.
+
+Each zone room counts the players standing in it, by district (the page says which district it is in when that
+changes), and reports to one `Stats` object per city: 5 s after someone arrives, leaves or changes district, and every
+45 s while it is occupied, using an alarm so a sleeping room still reports. The reply is the whole city's count, which
+the room passes to its players over their existing connections, so pages never poll. Counts are therefore up to about
+a minute behind, and a room that vanishes without reporting drops out after 150 s. Only connected players count:
+hidden tabs and idle players have already disconnected.
+
+The same numbers are public as JSON, cached for 30 s:
+<https://glyphwalk-online.benjamin-soulier.workers.dev/stats> (add `?seed=42` for another city):
+
+```json
+{"seed":1337,"online":57,"districts":{"DOWNTOWN":31,"JAPANTOWN":12,"MEDINA":14}}
+```
+
 ## How it scales
 
 ```
@@ -54,6 +73,8 @@ request, and 13,000 GB-s a day of Durable Object time (a room is billed at 128 M
 - Messages: a moving player sends 5 a second, which is about 900 billed requests an hour, so about 110 player-hours
   a day while everyone keeps moving (standing still sends nothing).
 - Time: an awake room costs 450 GB-s an hour, so about 29 room-hours a day.
+- Head counts: an occupied room reports about 80 times an hour (a report and an alarm each time), so about 4,000
+  requests a day for a room that is never empty.
 
 Over the free limits, joining fails until 00:00 UTC and the game carries on single-player. The Workers Paid plan
 ($5/month) includes 1 million requests and 400,000 GB-s a month, then $0.15 per million requests and $12.50 per
