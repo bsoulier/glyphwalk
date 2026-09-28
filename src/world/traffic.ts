@@ -317,7 +317,7 @@ export class Traffic {
  * Models are deliberately a handful of boxes: at glyph resolution a 6-box car reads better than a
  * detailed mesh, and each LOD step drops parts that would be smaller than a cell anyway.
  */
-function drawCar(v: Vehicle, d: number, time: number): void {
+export function drawCar(v: Vehicle, d: number, time: number): void {
   const fX = Math.sin(v.yaw), fZ = Math.cos(v.yaw), rX = fZ, rZ = -fX;
   drawBoxYaw(v.x, v.y + 0.72, v.z, v.yaw, 0.95, 0.36, 2.2, M_CAR, v.r, v.g, v.b, v.seed);
   if (d < 110) {
@@ -359,7 +359,7 @@ function drawCar(v: Vehicle, d: number, time: number): void {
   }
 }
 
-function drawSkyCar(v: Vehicle, time: number): void {
+export function drawSkyCar(v: Vehicle, time: number): void {
   const fX = Math.sin(v.yaw), fZ = Math.cos(v.yaw), rX = fZ, rZ = -fX;
   drawBoxYaw(v.x, v.y, v.z, v.yaw, 1.0, 0.45, 2.3, M_CAR, v.r * 0.8, v.g * 0.8, v.b * 0.8, v.seed, 63);
   drawBoxYaw(v.x - fX * 0.2, v.y + 0.75, v.z - fZ * 0.2, v.yaw, 0.8, 0.3, 1.2, M_GLASS, 0, 0, 0, v.seed);

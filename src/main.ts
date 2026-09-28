@@ -35,6 +35,12 @@ import { toast } from './ui/toast';
 import { CATS_PER_HOOD } from './world/cats';
 import { MAX_DETAIL, Quality, lowEndDevice } from './ui/quality';
 import { loadSettings, saveSettings } from './ui/settings';
+import { trackEvent, trackVisit } from './ui/analytics';
+import { Online } from './net/online';
+import { loadOnlineId, newOnlineId, saveOnlineId } from './net/identity';
+import { playerName } from './net/names';
+import { EMOTES, type PlayerState } from './net/protocol';
+import type { OtherPlayer } from './world/others';
 
 const params = new URLSearchParams(location.search);
 setWorldSeed(Number(params.get('seed')) || 1337);
@@ -78,7 +84,16 @@ document.addEventListener('visibilitychange', () => {
 });
 const clock = new Clock();
 const gif = new GifRecorder();
-if (import.meta.env.DEV) Object.assign(window, { glyphwalk: { world, player, sound, clock, quality, gif, get tour() { return tour; } } });
+trackVisit();
+
+/**
+ * The online server, from VITE_ONLINE_URL at build time; `?online=ws://...` points elsewhere in development.
+ * Automated browsers (crawlers, the e2e tests) stay out of the rooms.
+ */
+const ONLINE_URL = ((import.meta.env.DEV && params.get('online'))
+  || (!navigator.webdriver && (import.meta.env.VITE_ONLINE_URL as string | undefined)) || '').trim().replace(/\/+$/, '');
+const online = ONLINE_URL ? new Online(ONLINE_URL, worldSeed, loadOnlineId()) : null;
+if (import.meta.env.DEV) Object.assign(window, { glyphwalk: { world, player, sound, clock, quality, gif, online, get tour() { return tour; } } });
 // ?ground=flat or ?ground=zones (dev only): ground cells as solid colour, to check where lines really fall.
 if (import.meta.env.DEV) setGroundDebug(params.get('ground') === 'flat' ? 'flat' : params.get('ground') === 'zones' ? 'zones' : null);
 
@@ -238,6 +253,18 @@ const hud = new Hud({
     settings.open = open ? [...settings.open, id] : settings.open.filter((s) => s !== id);
     persist();
   },
+  onOnline: (on) => {
+    settings.online = on;
+    persist();
+  },
+  onRename: () => {
+    if (!online) return;
+    const id = newOnlineId();
+    saveOnlineId(id);
+    online.setId(id);
+    hud.setOnline(true, playerName(id));
+    toast(`You are now ${playerName(id)}`, 2000);
+  },
 });
 
 function setSound(on: boolean): void {
@@ -281,6 +308,7 @@ function layout(): void {
 window.addEventListener('resize', layout);
 layout();
 hud.sync(settings, quality.cellSetting);
+hud.setOnline(online !== null, online ? playerName(online.myId) : '');
 
 const hudEl = document.getElementById('hud') as HTMLElement;
 
@@ -338,8 +366,109 @@ const touchIntroUntil = performance.now() + 8000;
 /** Walking keys are shown until the player has used them. */
 let hasMoved = false;
 
+/** The emote list is open (Z): number keys pick an emote instead of a camera mode. */
+let emoteMenu = false;
+let emoteMenuUntil = 0;
+/** The "other players are here" hint shows once per visit. */
+let metSomeone = false;
+const me: PlayerState = { x: 0, z: 0, y: 0, yaw: 0, mode: 0 };
+const NOBODY: readonly OtherPlayer[] = [];
+let others: readonly OtherPlayer[] = NOBODY;
+/** A hidden tab lets go of the server after this long, an idle player after IDLE_ONLINE_MS. */
+const HIDDEN_ONLINE_MS = 20000;
+const IDLE_ONLINE_MS = 10 * 60 * 1000;
+const MAX_OTHERS = 64;
+
+if (online) {
+  online.onNewId = (id) => {
+    saveOnlineId(id);
+    hud.setOnline(true, playerName(id));
+  };
+  online.onEmote = (r, k) => {
+    if (EMOTES[k].label !== 'meow') return;
+    const dx = r.x - cam.x, dz = r.z - cam.z, d = Math.hypot(dx, dz);
+    if (d < 40) sound.meow(Math.sin(Math.atan2(dx, dz) - cam.yaw) * 0.9, 0.25 * (1 - d / 45));
+  };
+  // Animation frames stop in a hidden tab, so a timer lets go of the server instead.
+  let hiddenTimer = 0;
+  document.addEventListener('visibilitychange', () => {
+    clearTimeout(hiddenTimer);
+    if (document.hidden) hiddenTimer = window.setTimeout(() => online.update(performance.now(), me, settings.online, false), HIDDEN_ONLINE_MS);
+  });
+}
+
+/** Where others should see the player: their feet, or the cab they ride in. */
+function whereAmI(): PlayerState {
+  const v = player.riding(world);
+  me.mode = MODES.indexOf(player.mode);
+  if (v) {
+    me.x = v.x; me.z = v.z; me.y = v.y; me.yaw = v.yaw;
+  } else if (player.mode === 'walk') {
+    me.x = player.x; me.z = player.z; me.y = player.floorY; me.yaw = player.yaw;
+  } else {
+    me.x = cam.x; me.z = cam.z; me.y = Math.max(0, cam.y - EYE_H); me.yaw = cam.yaw;
+  }
+  return me;
+}
+
+/** Keeps the connections going and returns the other players to draw; in photo mode they hold still. */
+function onlineFrame(dt: number, frozen: boolean): readonly OtherPlayer[] {
+  if (!online) return NOBODY;
+  const now = performance.now();
+  online.update(now, whereAmI(), settings.online, now - input.lastActive < IDLE_ONLINE_MS);
+  if (online.status === 'online') trackEvent('online');
+  if (emoteMenu && (now > emoteMenuUntil || online.status !== 'online')) emoteMenu = false;
+  if (frozen) return others;
+  others = online.visible(now, dt, cam.x, cam.z, MAX_OTHERS);
+  if (!metSomeone && online.count > 0) {
+    metSomeone = true;
+    toast(`Other players are here! ${touch ? 'EMOTE' : 'Z'} to say hello.`, 3500);
+  }
+  return others;
+}
+
+function toggleEmotes(): void {
+  if (!online || !settings.online) return;
+  if (online.status !== 'online') {
+    toast('Not connected yet', 1200);
+    return;
+  }
+  emoteMenu = !emoteMenu;
+  emoteMenuUntil = performance.now() + 6000;
+}
+
+function sendEmote(k: number): void {
+  emoteMenu = false;
+  if (!online) return;
+  if (!online.emote(k, performance.now())) {
+    toast('One moment before the next one', 1200);
+    return;
+  }
+  toast(`You: ${EMOTES[k].text}`, 1500);
+  if (EMOTES[k].label === 'meow') sound.meow(0, 0.2);
+  trackEvent('emote');
+}
+
+function onlineText(): string {
+  if (!online) return '';
+  switch (online.status) {
+    case 'online': {
+      const n = online.count;
+      return n === 0 ? 'nobody near you yet' : `${n} player${n === 1 ? '' : 's'} near you`;
+    }
+    case 'connecting': return 'connecting...';
+    case 'paused': return 'paused while away';
+    case 'off': return 'off';
+    case 'offline': return 'offline, retrying';
+    case 'outdated': return 'reload the page to play';
+  }
+}
+
 const photo = new PhotoMode(touch !== null);
-photo.onShot = () => sound.shutter();
+photo.onShot = () => {
+  sound.shutter();
+  trackEvent('photo');
+};
 setupPwa(document.getElementById('btn-install') as HTMLButtonElement, document.getElementById('ios-hint') as HTMLElement);
 
 function togglePhoto(): void {
@@ -363,6 +492,7 @@ async function finishGif(): Promise<void> {
   try {
     const blob = await gif.encode();
     photo.save(blob, 'gif');
+    trackEvent('gif');
   } catch (err) {
     console.error(err);
     toast('Could not make the GIF');
@@ -381,8 +511,10 @@ function shareView(): void {
     hour: sky.hour, time: settings.time, weather: settings.weather, seed: worldSeed,
   });
   const where = `${HOODS[currentHood()].name} at ${clockText(sky.hour)} (${sky.label}, ${WEATHER_LABELS[settings.weather].toLowerCase()})`;
+  trackEvent('share');
+  const meet = online && settings.online ? ' - whoever opens it can find you there' : '';
   void shareUrl(url, `Glyphwalk: ${where}`, touch !== null).then((how) => {
-    if (how === 'copied') toast(`Link copied: opens ${where}`);
+    if (how === 'copied') toast(`Link copied: opens ${where}${meet}`);
     else if (how === 'failed') prompt('Copy this link:', url);
   });
 }
@@ -408,13 +540,15 @@ function touchContext(): TouchButton[] {
     ];
   }
   if (fullMap) return [{ label: 'ZOOM +', code: 'Equal' }, { label: 'ZOOM -', code: 'Minus' }];
-  if (player.mode === 'fly') return [{ label: 'RISE', code: 'KeyE', hold: true }, { label: 'SINK', code: 'KeyQ', hold: true }];
-  if (player.mode === 'taxi') return [{ label: 'RADIO', code: 'KeyE' }, { label: 'GET OUT', code: 'Enter' }];
-  if (riding()) return [{ label: 'RADIO', code: 'KeyE' }];
+  if (emoteMenu) return [...EMOTES.map((e, k) => ({ label: e.label.toUpperCase(), code: `Digit${k + 1}` })), { label: 'BACK', code: 'KeyZ' }];
+  const emote: TouchButton[] = online && settings.online && online.count > 0 ? [{ label: 'EMOTE', code: 'KeyZ' }] : [];
+  if (player.mode === 'fly') return [{ label: 'RISE', code: 'KeyE', hold: true }, { label: 'SINK', code: 'KeyQ', hold: true }, ...emote];
+  if (player.mode === 'taxi') return [{ label: 'RADIO', code: 'KeyE' }, { label: 'GET OUT', code: 'Enter' }, ...emote];
+  if (riding()) return [{ label: 'RADIO', code: 'KeyE' }, ...emote];
   const it = player.inside(world);
-  if (it && !player.liftMoving && inCab(it, player.x, player.z)) return [{ label: 'LIFT UP', code: 'KeyE' }, { label: 'LIFT DN', code: 'KeyQ' }];
-  if (player.mode === 'walk' && !it) return [{ label: 'TAXI', code: 'Enter' }];
-  return [];
+  if (it && !player.liftMoving && inCab(it, player.x, player.z)) return [{ label: 'LIFT UP', code: 'KeyE' }, { label: 'LIFT DN', code: 'KeyQ' }, ...emote];
+  if (player.mode === 'walk' && !it) return [{ label: 'TAXI', code: 'Enter' }, ...emote];
+  return emote;
 }
 
 const MOVE_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
@@ -425,6 +559,7 @@ const MOVE_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown
  */
 function prompts(): Prompt[] {
   if (photo.active || tour.active) return [];
+  if (emoteMenu) return touch ? [] : [...EMOTES.map((e, k): Prompt => [String(k + 1), e.label]), ['Z', 'close']];
   const p: Prompt[] = [];
   const it = player.inside(world);
   if (touch) {
@@ -469,6 +604,7 @@ function prompts(): Prompt[] {
       if (keys) p.push(['1', 'walk']);
       break;
   }
+  if (keys && online && settings.online && online.count > 0 && player.mode !== 'cctv') p.push(['Z', 'emote']);
   if (keys && !settings.hud) p.push(['H', 'menu']);
   return p;
 }
@@ -487,6 +623,12 @@ player.onCut = () => {
 function handleKeys(): void {
   for (const code of input.takePressed()) {
     if (MOVE_KEYS.has(code)) hasMoved = true;
+    if (emoteMenu && code.startsWith('Digit')) {
+      const k = Number(code.slice(5)) - 1;
+      if (k >= 0 && k < EMOTES.length) sendEmote(k);
+      else emoteMenu = false;
+      continue;
+    }
     if (code.startsWith('Digit')) {
       const n = Number(code.slice(5));
       if (n >= 1 && n <= MODES.length) player.setMode(MODES[n - 1], world);
@@ -506,7 +648,11 @@ function handleKeys(): void {
         else player.useLift(-1, world);
         break;
       case 'KeyP': togglePhoto(); break;
-      case 'KeyO': startTour(); break;
+      case 'KeyO':
+        startTour();
+        trackEvent('tour');
+        break;
+      case 'KeyZ': toggleEmotes(); break;
       case 'KeyL': shareView(); break;
       case 'Enter':
         if (photo.active) photo.requestPng();
@@ -516,11 +662,13 @@ function handleKeys(): void {
         } else if (player.mode === 'walk' && !player.inside(world)) {
           player.setMode('taxi', world);
           toast("Taxi! You're in the back seat.", 2500);
+          trackEvent('taxi');
         }
         break;
       case 'KeyC': if (photo.active) photo.copyText(fb); break;
       case 'Escape':
         fullMap = false;
+        emoteMenu = false;
         if (photo.active) togglePhoto();
         break;
       case 'Equal':
@@ -605,12 +753,15 @@ function updateHud(): void {
   const district = HOODS[hood].name;
   const indoors = player.inside(world);
   hud.setHood(hood);
+  trackEvent(`district-${district.toLowerCase().replace(/\s+/g, '-')}`);
+  trackEvent(`mode-${player.mode}`);
   hud.setStats([
     `MODE     ${MODE_LABELS[player.mode]}`,
     `SECTOR   ${district}${indoors ? ` / ${indoors.label}` : ''}`,
     `CATS     ${world.cats.count(hood)}/${CATS_PER_HOOD} here   ${world.cats.total}/${CATS_PER_HOOD * HOODS.length} city`,
     `TIME     ${clockText(sky.hour)} ${sky.label}${settings.time === 'cycle' ? '' : ' (fixed)'}`,
     `WEATHER  ${WEATHER_LABELS[settings.weather].toUpperCase()}`,
+    ...(online ? [`ONLINE   ${onlineText()}`] : []),
   ].join('\n'));
   if (hud.nerdsOpen) {
     const budget = 1000 / quality.targetFps;
@@ -753,6 +904,7 @@ function catFrame(dt: number): void {
   if (c) {
     const name = HOODS[c.hood].name;
     const n = cats.count(c.hood);
+    trackEvent('cat');
     sound.meow(0, 0.3);
     sound.chime();
     toast(n >= CATS_PER_HOOD
@@ -840,6 +992,7 @@ function frame(now: number): void {
     cab: ride && player.mode === 'taxi' ? { v: ride, fare: player.fare, radio: station ? station.name : '' } : null,
     liftDoors: player.liftDoors,
     sky,
+    others: onlineFrame(dt, photo.active && !gif.active),
   };
   renderScene(fb, cam, world, env, rain);
   if (staticT > 0) {

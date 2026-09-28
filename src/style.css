@@ -124,6 +124,29 @@ body {
   max-width: 150px;
 }
 
+#hud .online {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0 2px;
+}
+
+#hud .online[hidden] {
+  display: none;
+}
+
+#hud #online-name {
+  flex: 1;
+  color: #b8ffd6;
+}
+
+#hud .online button {
+  flex: 0;
+  padding: 1px 6px;
+  white-space: nowrap;
+  color: #4fa877;
+}
+
 #hud .kinds {
   display: grid;
   grid-template-columns: 1fr 1fr;

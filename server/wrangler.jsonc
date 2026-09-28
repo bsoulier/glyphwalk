@@ -1,0 +1,14 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "glyphwalk-online",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  "durable_objects": {
+    "bindings": [{ "name": "ZONES", "class_name": "Zone" }]
+  },
+  // SQLite-backed classes are the kind the Workers Free plan allows; the zones never write to storage.
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Zone"] }],
+  "vars": {
+    "ALLOWED_ORIGINS": "https://bsoulier.github.io,http://localhost:5173,http://localhost:4173"
+  }
+}

@@ -31,6 +31,11 @@
         <label class="check"><input type="checkbox" id="chk-sound" /> Sound</label>
         <input type="range" id="rng-volume" min="0" max="100" step="5" aria-label="Volume" />
       </div>
+      <div id="online-row" class="online" hidden>
+        <label class="check"><input type="checkbox" id="chk-online" /> Online as</label>
+        <span id="online-name"></span>
+        <button id="btn-rename" type="button" title="Draw another name">new name</button>
+      </div>
       <details data-section="sound">
         <summary>Sounds &amp; radio</summary>
         <div id="sound-kinds" class="kinds"></div>

@@ -25,6 +25,8 @@ export interface HudHandlers {
   onNerds(on: boolean): void;
   onEvents(mode: EventMode): void;
   onSection(id: string, open: boolean): void;
+  onOnline(on: boolean): void;
+  onRename(): void;
 }
 
 /** One thing that can be done right now: a key (empty for plain advice) and what it does. */
@@ -71,6 +73,9 @@ export class Hud {
   private readonly kindsBox = $('sound-kinds');
   private readonly kinds = new Map<SoundKind, HTMLInputElement>();
   private readonly nerdsCheck = $('chk-nerds') as HTMLInputElement;
+  private readonly onlineRow = $('online-row');
+  private readonly onlineCheck = $('chk-online') as HTMLInputElement;
+  private readonly onlineName = $('online-name');
   private readonly goal = $('goal');
   private readonly prompt = $('prompt');
   private promptKey = '';
@@ -131,6 +136,12 @@ export class Hud {
     }
     check(this.nerdsCheck, (on) => handlers.onNerds(on));
     $('nerds-close').addEventListener('click', () => handlers.onNerds(false));
+    check(this.onlineCheck, (on) => handlers.onOnline(on));
+    const rename = $('btn-rename');
+    rename.addEventListener('click', () => {
+      rename.blur();
+      handlers.onRename();
+    });
     for (const d of this.sections) {
       // A focused summary would take Space and Enter, which the game uses.
       d.querySelector('summary')?.addEventListener('mousedown', (e) => e.preventDefault());
@@ -159,6 +170,13 @@ export class Hud {
       const open = s.open.includes(d.dataset.section ?? '');
       if (d.open !== open) d.open = open;
     }
+    this.onlineCheck.checked = s.online;
+  }
+
+  /** The online row shows only when the build has a server; `name` is the player's generated name. */
+  setOnline(available: boolean, name: string): void {
+    this.onlineRow.hidden = !available;
+    this.onlineName.textContent = name;
   }
 
   /** The goal line is for newcomers: it goes once the first cat is found. */

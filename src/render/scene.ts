@@ -9,6 +9,7 @@ import { LIGHT_STRIDE, POLE_STRIDE } from '../world/city';
 import { FACE_STRIDE } from '../world/faces';
 import { type Interior, drawInterior } from '../world/interior';
 import { type Cab, drawCabin } from '../world/cabin';
+import { type OtherPlayer, drawOtherTags, drawOthers } from '../world/others';
 import { isLandmark } from '../world/layout';
 import { drawBackground } from './background';
 import type { Daylight } from './daylight';
@@ -29,6 +30,8 @@ export interface FrameEnv {
   /** How far the doors of the lift the camera rides in are closed, 0 to 1. */
   liftDoors: number;
   sky: Daylight;
+  /** Other players in sight, when playing online. */
+  others: readonly OtherPlayer[];
 }
 
 const G_STAR = glyph('*');
@@ -61,6 +64,7 @@ export function renderScene(fb: FrameBuffer, cam: Camera, world: World, env: Fra
   }
   if (env.weather !== 'fog') drawLandmark(fb, cam, world, env, blocks);
   world.drawActors(cam, env.time, env.weather === 'rain', env.hidden);
+  if (env.others.length > 0) drawOthers(cam, env.others, env.time);
   if (env.cab) {
     setSnowCover(0);
     drawCabin(env.cab, cam, env.time);
@@ -68,6 +72,7 @@ export function renderScene(fb: FrameBuffer, cam: Camera, world: World, env: Fra
   }
   drawBackground(fb, cam, { ...env, glow: world.fireworks.glow });
   world.fireworks.draw(fb, cam, env.weather === 'fog' ? FOG_DENSITY : 0);
+  if (env.others.length > 0) drawOtherTags(cam, env.others);
   // Indoors, only drops beyond the far wall can be outside; nearer ones would fall in the room (or the cab).
   if (rain.on) rain.draw(fb, indoors ? farCorner(indoors, cam) : env.cab ? CAB_REACH : 0);
 }

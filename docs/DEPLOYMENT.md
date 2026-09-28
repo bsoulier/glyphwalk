@@ -55,6 +55,30 @@ Settings > Pages > Source to "GitHub Actions".
 - **Installable app.** `public/manifest.webmanifest` and the icons in `public/` make it installable on Android and
   desktop; iOS uses the `apple-touch-icon` and meta tags in `index.html`.
 
+## Build settings
+
+[`.env.production`](../.env.production) holds the two settings baked into the published build. Both are public (they
+end up in the page); left empty, the feature is off.
+
+| Setting | What it turns on |
+|---|---|
+| `VITE_ONLINE_URL` | Playing online, through the server in `server/` ([ONLINE.md](ONLINE.md) covers deploying it). |
+| `VITE_GOATCOUNTER` | Usage counts on [GoatCounter](https://www.goatcounter.com). |
+
+### Usage counts (GoatCounter)
+
+GoatCounter counts visits without cookies or personal data, so no consent banner is needed. The game does not load
+GoatCounter's script: [`src/ui/analytics.ts`](../src/ui/analytics.ts) requests their counting endpoint directly.
+
+1. Sign up at <https://www.goatcounter.com> and pick a code, e.g. `glyphwalk` (the dashboard is then
+   `https://glyphwalk.goatcounter.com`).
+2. Set `VITE_GOATCOUNTER=glyphwalk` in `.env.production`, commit, and `npm run deploy`.
+
+It counts one visit per page load and, as events, the first time in a visit that someone enters each district, uses
+each camera mode, rides a taxi, finds a cat, saves a photo or GIF, shares a link, starts the tour, goes online, or
+sends an emote. Nothing is counted in development, on `localhost`, in automated browsers, or when the browser sends
+Do Not Track or Global Privacy Control.
+
 ## Checking a deploy
 
 ```sh

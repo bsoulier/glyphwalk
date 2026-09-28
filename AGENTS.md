@@ -11,9 +11,15 @@ npm test             # unit tests, Vitest, Node environment, ~1 s
 npm run test:e2e     # Playwright against the production build on port 4173 (first run: npx playwright install chromium)
 npm run build        # tsc --noEmit (src and tests) + vite build into dist/
 npm run deploy       # build and publish dist/ to the gh-pages branch (see docs/DEPLOYMENT.md)
+
+cd server            # the online server (Cloudflare Worker), its own package: npm install once
+npm run dev          # wrangler dev on ws://127.0.0.1:8787; open the game with ?online=ws://127.0.0.1:8787
+npm run typecheck    # the Worker against the Cloudflare types
+npm run load         # load test against a running server (see docs/ONLINE.md)
 ```
 
-Before committing: `npm test && npm run build`. For anything visible or touching input, also `npm run test:e2e`.
+Before committing: `npm test && npm run build`. For anything visible or touching input, also `npm run test:e2e`. For
+changes under `server/` or `src/net/`, also `cd server && npm run typecheck`.
 
 ## Layout
 
@@ -24,7 +30,10 @@ Before committing: `npm test && npm run build`. For anything visible or touching
 | `src/world/` | City generation (`city.ts`, `build.ts`, `styles/*` per district, the Glyph Tower in `styles/downtown.ts`), districts (`hoods.ts`), interiors and furniture, traffic and the taxi cabin you ride in (`cabin.ts`), pedestrians, signals, monorail, cats, night market, fireworks, event schedule (`events.ts`). |
 | `src/audio/` | `sound.ts` (all ambience and effects) and `radio.ts` (generated music), Web Audio only. |
 | `src/game/` | Player and camera modes, keyboard/mouse input, touch controls, auto tour. |
-| `src/ui/` | HUD panel, settings persistence, quality ladder, photo mode, GIF encoder, share links, resume, PWA install, toasts. |
+| `src/ui/` | HUD panel, settings persistence, quality ladder, photo mode, GIF encoder, share links, resume, PWA install, toasts, usage counts (`analytics.ts`). |
+| `src/net/` | Playing online: the wire format shared with the server (`protocol.ts`), generated names, the client's zone connections and smoothing (`online.ts`). Other players are drawn by `world/others.ts`. |
+| `server/` | The online server: a Cloudflare Worker (`src/index.ts`) and the room logic (`src/zone.ts`, no Cloudflare dependency, unit tested). See [docs/ONLINE.md](docs/ONLINE.md). |
+| `.env.production` | Build settings for the published site: the online server URL and the GoatCounter code (public; empty turns them off). |
 | `public/` | Manifest and icons; copied to the build and precached by the service worker. |
 | `tests/unit/` | Vitest tests. `storage.ts` stubs `localStorage`. |
 | `tests/e2e/` | Playwright smoke tests (desktop, plus `@phone`-tagged tests on a phone profile). |
@@ -35,9 +44,11 @@ Before committing: `npm test && npm run build`. For anything visible or touching
 
 1. `renderScene` (`src/render/scene.ts`) collects visible blocks front to back and rasterizes their faces, then props,
  poles and lights; then the Glyph Tower on its own (with its own far plane and fog) when it is past the draw
- distance; then moving actors (`world.drawActors`), and the taxi cabin when riding in the back of one.
+ distance; then moving actors (`world.drawActors`), other players (`world/others.ts`), and the taxi cabin when
+ riding in the back of one.
 2. `drawBackground` fills only cells nothing covered (depth 0): ground where the ray points down, sky elsewhere.
-3. Fireworks draw after the sky (they add light to it), rain and snow last.
+3. Fireworks draw after the sky (they add light to it), then other players' name tags and emotes (they set no depth,
+ so the ground and sky would paint over them), rain and snow last.
 4. The presenter uploads two `cols x rows` textures and the GPU draws glyphs from an atlas.
 
 Frame buffer cells pack `glyph << 24 | b << 16 | g << 8 | r` in `fg` and `bg`; `depth` holds `1/z` (0 = empty). Surface
@@ -66,8 +77,16 @@ glow (lamps, signs, windows at night).
   through the muffle filter that makes interiors sound enclosed.
 - **Settings.** New persistent options go in `Settings` and `DEFAULTS` in `ui/settings.ts`, validated in
   `loadSettings` if they are enums, shown in `index.html` + `ui/hud.ts`, and wired in `main.ts`. Storage keys:
-  `glyphwalk.settings.v1`, `glyphwalk.cats.v1`, `glyphwalk.view.v1`. URL parameters (`hood`, `cam`, `mode`, `floor`,
-  `time`, `hour`, `weather`, `seed`, `tour`) override saved state.
+  `glyphwalk.settings.v1`, `glyphwalk.cats.v1`, `glyphwalk.view.v1`, `glyphwalk.online.v1`. URL parameters (`hood`,
+  `cam`, `mode`, `floor`, `time`, `hour`, `weather`, `seed`, `tour`) override saved state.
+- **Online.** Players never send free text: names come from the id (`net/names.ts`) and speech is an index into
+  `EMOTES` (`net/protocol.ts`), append only, with texts the font can draw. Keep both lists harmless. The world is never
+  sent (it is a function of the seed); only position, mode, heading and emotes. Any incompatible change to the wire
+  format bumps `PROTOCOL`; deploy the server before the site. Room logic stays in `server/src/zone.ts`, free of
+  Cloudflare APIs, so it is tested in Node. Idle and hidden clients must keep disconnecting: they are what keeps the
+  server cheap.
+- **Usage counts.** Only through `trackEvent` in `ui/analytics.ts` (GoatCounter's endpoint, no third-party script, no
+  cookies), once per visit per event name, and never with anything personal in the name.
 - **HUD.** The panel keeps only the district, time, weather, events and volume in view; everything else goes in its
   folding sections. Keys that apply only in some situations belong in `prompts()` in `main.ts` (the line at the bottom
   of the screen) and, for phones, `touchContext()`, not in the panel's key list.

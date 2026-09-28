@@ -29,6 +29,8 @@ export interface Settings {
   events: EventMode;
   /** Ids of the settings panel's folding sections that are open. */
   open: string[];
+  /** Play online (see other players and be seen), when the build has a server. */
+  online: boolean;
 }
 
 const KEY = 'glyphwalk.settings.v1';
@@ -52,6 +54,7 @@ const DEFAULTS: Settings = {
   mapZoom: 1,
   events: 'periodic',
   open: [],
+  online: true,
 };
 
 export function loadSettings(): Settings {

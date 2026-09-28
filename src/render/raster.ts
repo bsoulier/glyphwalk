@@ -305,6 +305,32 @@ export function drawVLine(
   }
 }
 
+/**
+ * A line of glowing text centred over a point, `rowOffset` rows above it (name tags). Hidden where
+ * something nearer is in the way, and it leaves the depth alone so it never hides anything itself.
+ */
+export function drawLabel(
+  x: number, y: number, z: number, glyphs: ArrayLike<number>, rowOffset: number, r: number, g: number, b: number,
+): void {
+  const wx = x - camX, wy = y - camY, wz = z - camZ;
+  const x1 = wx * cY - wz * sY, z1 = wx * sY + wz * cY;
+  const vz = z1 * cP + wy * sP;
+  if (vz < near || vz > far) return;
+  const vy = wy * cP - z1 * sP;
+  const row = Math.floor(cys - (vy / vz) * fy) - rowOffset;
+  if (row < 0 || row >= rows) return;
+  const n = glyphs.length;
+  const col0 = Math.floor(cxs + (x1 / vz) * fx) - (n >> 1);
+  const iz = 1 / vz;
+  for (let k = 0; k < n; k++) {
+    const col = col0 + k;
+    if (col < 0 || col >= cols || glyphs[k] === 0) continue;
+    const idx = row * cols + col;
+    if (iz * 1.02 < depth[idx]) continue;
+    put(idx, glyphs[k], r, g, b, 0.2, vz, 1);
+  }
+}
+
 /** Single-cell light. A small depth bias lets lights mounted on surfaces win the depth test. */
 export function drawPoint(
   x: number, y: number, z: number, gl: number, r: number, g: number, b: number, bgk: number, emissive: number,

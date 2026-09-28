@@ -11,7 +11,7 @@ Runs in the browser on desktop and phone. No install, no sign-up, and after the 
 Every frame is a grid of characters. A software rasterizer draws the city at glyph resolution, choosing a character, a
 foreground and a background colour for each cell, and the GPU turns the grid into pixels. There are no textures,
 models, fonts or sound files: the city, its lighting and its soundtrack are all generated as you move through it, in
-about 85 kB of gzipped JavaScript.
+about 90 kB of gzipped JavaScript.
 
 ## Things to do
 
@@ -64,6 +64,7 @@ about 85 kB of gzipped JavaScript.
 | `G` / `T` / `F` | Colour style / scanlines / full screen |
 | `[` `]` | Bigger or smaller character cells |
 | `O` / `H` | Auto tour (also starts after 45 s idle) / settings panel |
+| `Z` | Emotes, when playing online |
 
 On a phone the left half of the screen is a joystick (push further to run) and the right half drags the view. The
 buttons on the right switch camera, take photos, open the map and the settings, and extra buttons appear when they are
@@ -86,6 +87,21 @@ Everything is remembered, including where you were and which sections were open.
 | `seed` | `?seed=42` | A different city |
 | `cam`, `mode`, `floor`, `hour` | | Written by the share link |
 
+## Playing together
+
+When the online server is switched on, you see the other players near you: figures in bright shirts with a name tag,
+or their cab when they ride. There is no chat. Everyone gets a generated name (`COSMIC GECKO`) and a fixed set of
+emotes, from "hello" and "follow me" to a dance and a meow, so there is nothing to moderate. A shared link drops a
+friend right next to you. It can be switched off in the panel, and [docs/ONLINE.md](docs/ONLINE.md) explains how it
+works and scales.
+
+## Privacy
+
+No cookies and no accounts. Settings, found cats and where you were are kept in your browser. If usage counting is
+on, [GoatCounter](https://www.goatcounter.com) counts visits and a few events (a district visited, a taxi ride) without
+cookies or personal data, and not at all when the browser sends Do Not Track. Playing online shares only where you are
+in the city and your emotes with players nearby; the server keeps nothing.
+
 ## How it works
 
 - **Rendering** (`src/render/`): a scanline rasterizer fills a frame buffer with one glyph, foreground, background and
@@ -101,6 +117,8 @@ Everything is remembered, including where you were and which sections were open.
 - **Quality** (`src/ui/quality.ts`): cell size, draw distance and pixel density adjust themselves to hold the target
   frame rate, so it stays smooth on slower phones.
 - **Offline**: the build generates a service worker that precaches every file.
+- **Online** (`src/net/`, `server/`): a Cloudflare Worker with one Durable Object per 1 km zone of the city relays
+  positions in a compact binary format; the city itself is never sent, since every player generates the same one.
 
 ## Run it locally
 
