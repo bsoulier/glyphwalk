@@ -1,7 +1,7 @@
 import type { FrameBuffer } from './framebuffer';
 import type { World } from '../world/world';
 import { glyph } from '../core/charset';
-import { HOODS, HOOD_BLOCKS, H_DOCKS, H_DOWNTOWN, H_JAPAN, hoodAt, hoodOfRegion } from '../world/hoods';
+import { HOODS, HOOD_BLOCKS, H_DOCKS, H_DOWNTOWN, H_JAPAN, hoodAt, hoodOfRegion, isBeach } from '../world/hoods';
 import { HALF, KIND_CITY, KIND_PARK, LOT_EDGE, P, ROAD_HALF, blockKind, hasPond } from '../world/layout';
 import { KIND_POLICE, KIND_TAXI } from '../world/traffic';
 import { REGION, TRAIN_LEN, isRailRow, railZ } from '../world/train';
@@ -147,7 +147,10 @@ function terrain(v: MapView, n: Inner): void {
       const hood = hoodAt(bi, bj);
       const m = HOODS[hood].map;
       const kind = blockKind(bi, bj);
-      if (kind === KIND_CITY || hood === H_DOCKS) {
+      if (isBeach(bi, bj)) {
+        if (lz > HALF + 1.5) set(col, row, G_TILDE, 80, 190, 210, 14, 44, 70);
+        else set(col, row, G_SPACE, 0, 0, 0, 120, 104, 72);
+      } else if (kind === KIND_CITY || hood === H_DOCKS) {
         set(col, row, G_DARK, m[0] * 0.75, m[1] * 0.75, m[2] * 0.75, m[0] * 0.28, m[1] * 0.28, m[2] * 0.28);
       } else if (kind === KIND_PARK) {
         const dx = lx - HALF, dz = lz - HALF;

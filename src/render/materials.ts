@@ -2,7 +2,7 @@ import { glyph } from '../core/charset';
 import { hash3 } from '../core/hash';
 import { awning, corrugated, mansard, sign, tiles, vsign, wall } from './facades';
 import { ceiling, floor, goods, plaster, screen, woodgrain } from './interiors';
-import { beginSurface, fxC, put, time } from './surface';
+import { beginSurface, fxC, lampsOn, put, time } from './surface';
 
 export { put, putRaw } from './surface';
 export const beginMaterials = beginSurface;
@@ -35,8 +35,14 @@ export const M_CEILING = 25;
 export const M_WOOD = 26;
 export const M_GOODS = 27;
 export const M_SCREEN = 28;
+/** Neon tube in its base colour: lit at night along with the street lamps, a pale unlit tube by day. */
+export const M_NEON = 29;
+export const M_PICKET = 30;
+/** Swimming pool: turquoise, rippling, and glowing from underwater lamps at night. */
+export const M_POOL = 31;
 
 const G_SPACE = 0;
+const G_CARET = glyph('^');
 const G_DOT = glyph('.');
 const G_COLON = glyph(':');
 const G_PIPE = glyph('|');
@@ -86,6 +92,12 @@ export function shade(
     case M_WOOD: woodgrain(i, v, z, r, g, b, sh); break;
     case M_GOODS: goods(i, u, v, z, seed); break;
     case M_SCREEN: screen(i, u, v, z, r, g, b); break;
+    case M_NEON:
+      if (lampsOn > 0.3) put(i, G_FULL, r, g, b, 0.7, z, 1);
+      else put(i, G_EQ, (r * 0.4 + 120) * sh, (g * 0.4 + 120) * sh, (b * 0.4 + 120) * sh, 0.45, z, 0);
+      break;
+    case M_PICKET: picket(i, v, z, r, g, b, sh); break;
+    case M_POOL: pool(i, u, v, z); break;
     default: put(i, G_QMARK, 255, 0, 255, 0.5, z, 0);
   }
 }
@@ -123,6 +135,18 @@ function train(i: number, u: number, v: number, z: number, r: number, g: number,
     return;
   }
   put(i, G_EQ, r * sh, g * sh, b * sh, 0.35, z, 0);
+}
+
+/** Pointed pickets of a garden fence; `v` is height above the ground, so the points sit on top. */
+function picket(i: number, v: number, z: number, r: number, g: number, b: number, sh: number): void {
+  const near = fxC / z > 4;
+  put(i, near ? (v > 0.86 ? G_CARET : G_PIPE) : G_EQ, r * sh, g * sh, b * sh, near ? 0.3 : 0.5, z, 0);
+}
+
+function pool(i: number, u: number, v: number, z: number): void {
+  const ripple = ((Math.floor(u * 1.7 + time * 0.9) + Math.floor(v * 2.1 - time * 0.6)) & 3) === 0;
+  const glow = lampsOn;
+  put(i, fxC / z > 3 && !ripple ? G_DASH : G_TILDE, 70 + 40 * glow, 190 + 40 * glow, 215 + 30 * glow, 0.6, z, glow > 0.3 ? 1 : 0);
 }
 
 function water(i: number, u: number, v: number, z: number): void {

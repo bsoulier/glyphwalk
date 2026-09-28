@@ -1,6 +1,6 @@
 import type { Camera } from '../render/camera';
 import { drawBoxYaw, drawFace, drawPoint, sphereVisible } from '../render/raster';
-import { FLOOR_H, facadeWindows } from '../render/facades';
+import { FLOOR_H, facadeOf, facadeWindows } from '../render/facades';
 import { FLOOR_CARPET } from '../render/interiors';
 import { M_CEILING, M_FLOOR, M_GLOW, M_PAINT, M_PLASTER, M_SIGN } from '../render/materials';
 import { glyph } from '../core/charset';
@@ -182,6 +182,17 @@ const GLOW: RGB = [255, 226, 170];
 const LIFT_STEEL: RGB = [150, 154, 160];
 
 /**
+ * Centre of the door along a street side `len` metres long, for a building wearing facade `seed`: on a
+ * window bay near the middle (between two roller doors on warehouses), clear of the corner lift.
+ */
+export function doorCentre(seed: number, len: number): number {
+  const fw = facadeWindows(seed);
+  const uc = fw.ground === null ? Math.max(1, Math.round(len / 16)) * 8 : (Math.floor(len / fw.colW / 2) + 0.5) * fw.colW;
+  const edge = WALL_T + LIFT_HALF + LIFT_WALL + 0.2;
+  return len > 2 * edge ? Math.min(len - edge, Math.max(edge, uc)) : len / 2;
+}
+
+/**
  * A building you can walk into. Replaces the plain box and footprint collider: the street facade gets
  * a person-sized door, the inside gets three storeys (ground, middle, top) whose floors sit exactly on
  * the facade's storey lines and whose walls open where the facade draws windows.
@@ -191,15 +202,12 @@ export function enterable(B: Builder, spec: EnterSpec): void {
   const s = sideOf(r, side);
   const fw = facadeWindows(spec.seed);
   // Storeys follow the facade the building wears, which is what you see when you look out.
-  const fh = FLOOR_H[(spec.seed >> 18) & 7];
+  const fh = FLOOR_H[facadeOf(spec.seed)];
   const floors = Math.floor((h + 0.01) / fh);
   const depth = side === 0 || side === 2 ? r.z1 - r.z0 : r.x1 - r.x0;
   const doorW = Math.min(spec.doorW, s.len - 1.4);
 
-  // Centre the door on a facade bay near the middle; on warehouses, between two roller doors.
-  let uc = fw.ground === null ? Math.max(1, Math.round(s.len / 16)) * 8 : (Math.floor(s.len / fw.colW / 2) + 0.5) * fw.colW;
-  const edge = WALL_T + LIFT_HALF + LIFT_WALL + 0.2;
-  uc = s.len > 2 * edge ? Math.min(s.len - edge, Math.max(edge, uc)) : s.len / 2;
+  const uc = doorCentre(spec.seed, s.len);
   const t0 = uc - doorW / 2, t1 = uc + doorW / 2;
 
   // --- shell: the usual box minus the front wall, which is rebuilt around the door ---

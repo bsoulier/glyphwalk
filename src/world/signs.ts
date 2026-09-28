@@ -9,6 +9,12 @@ export const SIGN_TEXTS: readonly string[] = [
   'STOP', 'WALK', 'LOBBY', 'LIFT', 'OFFICE',
   'GYOZA', 'DANGO', 'MOCHI', 'CREPES', 'VIN', 'MIEL', 'OLIVES', 'FLEURS', 'CIDER', 'PIES', 'SOUP', 'MEAD',
   'NUTS', 'TACOS', 'BAO', 'PHO', 'BBQ', 'BOBA', 'JUICE',
+  'GROCERY', 'DONUTS', 'LAUNDRY', 'HARDWARE', 'ICE CREAM', 'LEMONADE', 'HOT DOGS', 'PRETZELS', 'CORN',
+  'MANOR', 'VILLA', 'ESTATE', 'PRIVATE',
+  'OCEAN', 'SURF', 'BEACH', 'PALMS', 'MARLIN', 'CASINO', 'GELATO', 'SUNSET', 'LIDO', 'TIKI', 'RUM', 'CABANA',
+  'FLAMINGO', 'CORAL', 'COCONUT', 'CHURROS',
+  'SOUK', 'SPICES', 'DATES', 'SAFFRON', 'HAMMAM', 'RIAD', 'TAGINE', 'CARPETS', 'LAMPS', 'BRASS', 'MINT', 'KEBAB',
+  'SKYDECK', 'GLYPH TOWER',
 ];
 
 export const TEXT_STOP = SIGN_TEXTS.indexOf('STOP');
@@ -18,6 +24,8 @@ export const TEXT_HOTEL = SIGN_TEXTS.indexOf('HOTEL');
 export const TEXT_LOBBY = SIGN_TEXTS.indexOf('LOBBY');
 export const TEXT_LIFT = SIGN_TEXTS.indexOf('LIFT');
 export const TEXT_OFFICE = SIGN_TEXTS.indexOf('OFFICE');
+export const TEXT_SKYDECK = SIGN_TEXTS.indexOf('SKYDECK');
+export const TEXT_TOWER = SIGN_TEXTS.indexOf('GLYPH TOWER');
 
 function signSet(...words: string[]): readonly number[] {
   return words.map((w) => {
@@ -36,8 +44,17 @@ export const STALLS_JAPAN = signSet('RAMEN', 'GYOZA', 'DANGO', 'MOCHI', 'SAKE', 
 export const STALLS_PARIS = signSet('CREPES', 'VIN', 'CAFE', 'MIEL', 'OLIVES', 'FLEURS');
 export const STALLS_OLDTOWN = signSet('CIDER', 'PIES', 'SOUP', 'MEAD', 'NUTS', 'BAKERY');
 export const STALLS_DOWNTOWN = signSet('TACOS', 'BAO', 'PHO', 'BBQ', 'BOBA', 'JUICE', 'PIZZA');
+export const SIGNS_SUBURB = signSet('GROCERY', 'DONUTS', 'LAUNDRY', 'HARDWARE', 'ICE CREAM', 'PIZZA', 'DINER', 'VIDEO', 'BAKERY', 'PHARMACY');
+export const SIGNS_ESTATES = signSet('MANOR', 'VILLA', 'ESTATE', 'PRIVATE');
+export const SIGNS_SEAFRONT = signSet('HOTEL', 'OCEAN', 'SURF', 'BEACH', 'PALMS', 'MARLIN', 'CASINO', 'GELATO', 'SUNSET', 'LIDO', 'TIKI', 'CABANA', 'FLAMINGO', 'CORAL', 'BAR', 'CLUB', 'DANCE');
+/** Names that run down the fin of a Seafront hotel. */
+export const HOTELS_SEAFRONT = signSet('OCEAN', 'PALMS', 'MARLIN', 'SUNSET', 'LIDO', 'FLAMINGO', 'CORAL', 'CABANA', 'HOTEL', 'CASINO');
+export const SIGNS_MEDINA = signSet('SOUK', 'SPICES', 'TEA', 'DATES', 'SAFFRON', 'HAMMAM', 'RIAD', 'TAGINE', 'CARPETS', 'LAMPS', 'BRASS', 'OLIVES', 'BAKERY');
+export const STALLS_SUBURB = signSet('LEMONADE', 'HOT DOGS', 'PRETZELS', 'CORN', 'DONUTS', 'ICE CREAM', 'PIES');
+export const STALLS_SEAFRONT = signSet('GELATO', 'COCONUT', 'CHURROS', 'JUICE', 'TACOS', 'RUM', 'LEMONADE');
+export const STALLS_MEDINA = signSet('SPICES', 'TEA', 'DATES', 'MINT', 'TAGINE', 'OLIVES', 'SAFFRON', 'KEBAB');
 /** Stalls that cook, so they get a steaming pot. */
-export const STEAMY = signSet('RAMEN', 'GYOZA', 'UDON', 'SOUP', 'PHO', 'BAO', 'BBQ', 'CREPES', 'PIES');
+export const STEAMY = signSet('RAMEN', 'GYOZA', 'UDON', 'SOUP', 'PHO', 'BAO', 'BBQ', 'CREPES', 'PIES', 'HOT DOGS', 'CORN', 'CHURROS', 'TAGINE', 'KEBAB', 'TEA');
 
 /** Horizontal sign, in sign units (metres at scale 1). */
 export const SIGN_CHAR_W = 0.9;
@@ -58,6 +75,9 @@ export const NEON: readonly RGB[] = [
 ];
 export const WARM_SIGNS: readonly RGB[] = [[255, 210, 120], [255, 235, 190], [240, 180, 90]];
 export const DOCK_SIGNS: readonly RGB[] = [[255, 160, 60], [200, 220, 255], [255, 220, 90]];
+/** Miami pastels in neon: pink, aqua, mint, lilac, peach. */
+export const DECO_NEON: readonly RGB[] = [[255, 90, 190], [80, 240, 255], [130, 255, 190], [200, 140, 255], [255, 170, 120]];
+export const BRASS_SIGNS: readonly RGB[] = [[255, 200, 110], [240, 220, 170], [120, 220, 200]];
 
 /** Sign sizes relative to a shop sign; the small ones are pedestrian signal plates. */
 export const SIGN_SCALES: readonly number[] = [1, 2, 3, 4, 0.5, 0.25];

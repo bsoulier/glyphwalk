@@ -790,13 +790,57 @@ export const ARCADE: Program = {
   },
 };
 
+/** Coin telescope on a post, looking along `facing` (chair codes), with someone at it now and then. */
+function telescope(R: Room, a: number, d: number, facing: number): void {
+  const fa = [0, 1, 0, -1][facing], fd = [1, 0, -1, 0][facing];
+  R.box(a - 0.06, d - 0.06, a + 0.06, d + 0.06, 0, 1.12, M_PAINT, STEEL, 0, BOX_SIDES);
+  R.box(a - 0.2, d - 0.2, a + 0.2, d + 0.2, 1.1, 1.36, M_PAINT, [220, 180, 40]);
+  R.box(a + fa * 0.22 - 0.07, d + fd * 0.22 - 0.07, a + fa * 0.22 + 0.07, d + fd * 0.22 + 0.07, 1.18, 1.3, M_PAINT, DARK);
+  R.solid(a - 0.2, d - 0.2, a + 0.2, d + 0.2, 1.36);
+  R.maybe(a - fa * 0.55, d - fd * 0.55, facing, POSE_STAND, 0.8);
+}
+
+/** Observation deck at the top of the Glyph Tower: telescopes along all four walls of glass, benches facing out. */
+export const SKYDECK: Program = {
+  name: 'SKYDECK', floor: FLOOR_TILES, floorC: [52, 56, 66], wall: [70, 76, 90], light: [190, 215, 255],
+  build(R) {
+    R.busy = 0.45;
+    for (let a = 1.6; a < R.W - 1.2; a += 3.4) {
+      if (R.take(a - 0.5, 0.1, a + 0.5, 1.4)) telescope(R, a, 0.55, 2);
+      if (R.take(a - 0.5, R.D - 1.4, a + 0.5, R.D - 0.1)) telescope(R, a, R.D - 0.55, 0);
+    }
+    for (let d = 3.2; d < R.D - 3; d += 3.4) {
+      if (R.take(0.1, d - 0.5, 1.4, d + 0.5)) telescope(R, 0.55, d, 3);
+      if (R.take(R.W - 1.4, d - 0.5, R.W - 0.1, d + 0.5)) telescope(R, R.W - 0.55, d, 1);
+    }
+    // Benches in a ring a few metres in from the glass, their sitters looking out.
+    const ring = 4.2;
+    for (let a = ring + 1; a < R.W - ring - 1; a += 3.2) {
+      for (const [d, facing] of [[ring, 2], [R.D - ring, 0]] as const) {
+        if (!R.take(a - 0.9, d - 0.35, a + 0.9, d + 0.35)) continue;
+        R.box(a - 0.85, d - 0.25, a + 0.85, d + 0.25, 0.4, 0.47, M_WOOD, WOODS[3]);
+        R.box(a - 0.8, d - 0.2, a + 0.8, d + 0.2, 0, 0.4, M_PAINT, DARK, 0, BOX_SIDES);
+        R.solid(a - 0.85, d - 0.25, a + 0.85, d + 0.25, 0.47);
+        R.maybe(a - 0.4, d, facing, POSE_CHAIR, 0.8);
+        R.maybe(a + 0.4, d, facing, POSE_CHAIR, 0.6);
+      }
+    }
+    for (let d = 3; d < R.D; d += 5) for (let a = 3; a < R.W; a += 5) R.light(a, d, R.H - 0.3, [150, 200, 255]);
+    menuBoard(R, R.W / 2, 2.4, [120, 220, 255]);
+    plantsAlong(R, 7, 4);
+  },
+};
+
 const SHOPS: Record<string, Program> = {};
-for (const w of ['RAMEN', 'NOODLES', 'UDON', 'SOBA', 'SUSHI', 'YAKITORI', 'TOFU', 'IZAKAYA']) SHOPS[w] = NOODLE_BAR;
-for (const w of ['CAFE', 'BISTRO', 'BRASSERIE', 'TEA', 'DINER', 'PIZZA']) SHOPS[w] = CAFE;
-for (const w of ['BAR', 'TAVERN', 'SAKE', 'CLUB', 'LIVE', 'DANCE', 'KARAOKE', 'INN']) SHOPS[w] = BAR;
-for (const w of ['BAKERY', 'BOULANGERIE', 'PATISSERIE', 'FROMAGERIE', 'BUTCHER']) SHOPS[w] = BAKERY;
-for (const w of ['BOOKS', 'LIBRAIRIE', 'MANGA', 'PHARMACY', 'PHARMACIE', 'APOTHECARY', 'CANDLES', 'ANTIQUES', 'CLOCKS', 'TABAC', 'VIDEO', 'REPAIR', 'PAWN', '24H']) SHOPS[w] = STORE;
-for (const w of ['ARCADE', 'PACHINKO', 'CYBER', 'GAMES']) SHOPS[w] = ARCADE;
+for (const w of ['RAMEN', 'NOODLES', 'UDON', 'SOBA', 'SUSHI', 'YAKITORI', 'TOFU', 'IZAKAYA', 'TAGINE', 'KEBAB']) SHOPS[w] = NOODLE_BAR;
+for (const w of ['CAFE', 'BISTRO', 'BRASSERIE', 'TEA', 'DINER', 'PIZZA', 'GELATO', 'ICE CREAM', 'MINT']) SHOPS[w] = CAFE;
+for (const w of ['BAR', 'TAVERN', 'SAKE', 'CLUB', 'LIVE', 'DANCE', 'KARAOKE', 'INN', 'TIKI', 'RUM']) SHOPS[w] = BAR;
+for (const w of ['BAKERY', 'BOULANGERIE', 'PATISSERIE', 'FROMAGERIE', 'BUTCHER', 'DONUTS', 'DATES']) SHOPS[w] = BAKERY;
+for (const w of [
+  'BOOKS', 'LIBRAIRIE', 'MANGA', 'PHARMACY', 'PHARMACIE', 'APOTHECARY', 'CANDLES', 'ANTIQUES', 'CLOCKS', 'TABAC', 'VIDEO', 'REPAIR', 'PAWN', '24H',
+  'GROCERY', 'HARDWARE', 'LAUNDRY', 'SURF', 'SPICES', 'SAFFRON', 'CARPETS', 'LAMPS', 'BRASS', 'OLIVES', 'SOUK',
+]) SHOPS[w] = STORE;
+for (const w of ['ARCADE', 'PACHINKO', 'CYBER', 'GAMES', 'CASINO']) SHOPS[w] = ARCADE;
 
 /** The interior that matches a shop sign, or null when the sign is not a shop (hotels, docks...). */
 export function shopFor(text: number): Program | null {

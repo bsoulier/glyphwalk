@@ -1,7 +1,7 @@
 import { glyph } from '../core/charset';
 import { hash3 } from '../core/hash';
 import {
-  M_AWNING, M_CONCRETE, M_LAMP, M_LEAF, M_ROOF, M_SIGN, M_TRUNK, M_VSIGN, M_WATER,
+  M_AWNING, M_CAR, M_CONCRETE, M_GLASS, M_LAMP, M_LEAF, M_ROOF, M_SIGN, M_TRUNK, M_VSIGN, M_WATER, M_WHEEL,
 } from '../render/materials';
 import { BOX_BOTTOM, BOX_SIDES, BOX_TOP, FaceList } from './faces';
 import type { Hood } from './hoods';
@@ -312,4 +312,145 @@ export function fountain(B: Builder, cx: number, cz: number, radius: number, c: 
 export function chimney(B: Builder, x: number, z: number, y0: number, y1: number, hw: number, hd: number, c: RGB): void {
   B.props.box(x - hw, y0, z - hd, x + hw, y1, z + hd, M_CONCRETE, c[0], c[1], c[2], 0);
   B.maxH = Math.max(B.maxH, y1);
+}
+
+/**
+ * A plot seen from its street side, like a room frame: `u` runs along the street (left to right when
+ * facing the plot), `d` inward from the plot's front edge. Negative `d` reaches out over the sidewalk.
+ */
+export interface PlotFrame {
+  W: number;
+  D: number;
+  pt(u: number, d: number): [number, number];
+  rect(u0: number, d0: number, u1: number, d1: number): Rect;
+  /** True when `u` runs along x, i.e. the street side faces north or south. */
+  alongX: boolean;
+}
+
+export function plotFrame(r: Rect, side: number): PlotFrame {
+  const s = sideOf(r, side);
+  const ix = -s.nx, iz = -s.nz;
+  const pt = (u: number, d: number): [number, number] => [s.p0x + s.tx * u + ix * d, s.p0z + s.tz * u + iz * d];
+  return {
+    W: s.len,
+    D: side & 1 ? r.x1 - r.x0 : r.z1 - r.z0,
+    alongX: (side & 1) === 0,
+    pt,
+    rect(u0, d0, u1, d1) {
+      const [ax, az] = pt(u0, d0), [bx, bz] = pt(u1, d1);
+      return { x0: Math.min(ax, bx), z0: Math.min(az, bz), x1: Math.max(ax, bx), z1: Math.max(az, bz) };
+    },
+  };
+}
+
+/** Flat quad lying just above the ground (drives, paths, pool decks), under anything standing on it. */
+export function flat(B: Builder, r: Rect, y: number, mat: number, c: RGB, seed = 0): void {
+  const { x0, z0, x1, z1 } = r;
+  B.faces.poly(x0, y, z0, x1, y, z0, x1, y, z1, x0, y, z1, x0, z0, x1, z0, x1, z1, x0, z1, mat, c[0], c[1], c[2], seed);
+}
+
+/** A solid box standing on the ground, in the props or the faces list, with a collider. */
+export function solidBox(B: Builder, r: Rect, y0: number, y1: number, mat: number, c: RGB, seed = 0, props = true, mask = BOX_SIDES | BOX_TOP): void {
+  (props ? B.props : B.faces).box(r.x0, y0, r.z0, r.x1, y1, r.z1, mat, c[0], c[1], c[2], seed, mat, mask);
+  if (y0 < 1.5) B.colliders.push(r.x0, r.z0, r.x1, r.z1);
+  B.maxH = Math.max(B.maxH, y1);
+}
+
+/**
+ * Fence or hedge along `u` at depth `d` of a plot frame, from u0 to u1, leaving the gaps open.
+ * `across` runs it along `d` instead (u0, u1 are then depths and `d` is the u position).
+ */
+export function fenceRun(
+  B: Builder, f: PlotFrame, u0: number, u1: number, d: number, h: number, t: number, mat: number, c: RGB,
+  gaps: readonly (readonly [number, number])[] = [], across = false, props = true,
+): void {
+  let s = u0;
+  const seg = (a: number, b: number) => {
+    if (b - a < 0.05) return;
+    const r = across ? f.rect(d - t, a, d + t, b) : f.rect(a, d - t, b, d + t);
+    solidBox(B, r, 0, h, mat, c, mat === M_LEAF ? Math.floor(B.rng() * 65536) : 0, props);
+  };
+  for (const [g0, g1] of [...gaps].sort((p, q) => p[0] - q[0])) {
+    seg(s, Math.min(u1, g0));
+    s = Math.max(s, g1);
+  }
+  seg(s, u1);
+}
+
+const PALM_GREENS: readonly RGB[] = [[62, 140, 64], [80, 150, 58], [52, 124, 72]];
+
+/** Palm: a bare trunk and a crown of drooping fronds, each a two-part strip drawn from both sides. */
+export function palm(B: Builder, x: number, z: number, h: number): void {
+  const { rng } = B;
+  B.poles.push(x, 0, h, z, 0.16, 124, 100, 72, G_PIPE, M_TRUNK);
+  const c = pick(rng, PALM_GREENS);
+  const seed = Math.floor(rng() * 65536);
+  const n = 6, rot = rng() * Math.PI * 2;
+  for (let k = 0; k < n; k++) {
+    const a = rot + (k / n) * Math.PI * 2 + (rng() - 0.5) * 0.4;
+    const dx = Math.cos(a), dz = Math.sin(a), px = -dz, pz = dx;
+    const L = 2.6 + rng() * 0.9;
+    const pts = [[0, h + 0.1, 0.1], [L * 0.5, h + 0.5, 0.5], [L, h - 0.8 - rng() * 0.5, 0.08]];
+    for (let s = 0; s < 2; s++) {
+      const [d0, y0, w0] = pts[s], [d1, y1, w1] = pts[s + 1];
+      const ax = x + dx * d0 - px * w0, az = z + dz * d0 - pz * w0;
+      const bx = x + dx * d0 + px * w0, bz = z + dz * d0 + pz * w0;
+      const cx = x + dx * d1 + px * w1, cz = z + dz * d1 + pz * w1;
+      const ex = x + dx * d1 - px * w1, ez = z + dz * d1 - pz * w1;
+      const len = d1 - d0;
+      B.props.poly(ax, y0, az, bx, y0, bz, cx, y1, cz, ex, y1, ez, 0, 0, 2 * w0, 0, 2 * w1, len, 0, len, M_LEAF, c[0], c[1], c[2], seed + k);
+      B.props.poly(ex, y1, ez, cx, y1, cz, bx, y0, bz, ax, y0, az, 0, len, 2 * w1, len, 2 * w0, 0, 0, 0, M_LEAF, c[0], c[1], c[2], seed + k);
+    }
+  }
+  B.props.box(x - 0.28, h - 0.4, z - 0.28, x + 0.28, h + 0.05, z + 0.28, M_TRUNK, 110, 80, 40, 0);
+  B.maxH = Math.max(B.maxH, h + 1);
+}
+
+/** Tall narrow evergreen for formal gardens and drives. */
+export function cypress(B: Builder, x: number, z: number, h: number): void {
+  const seed = Math.floor(B.rng() * 65536);
+  B.poles.push(x, 0, 0.8, z, 0.12, 90, 70, 50, G_PIPE, M_TRUNK);
+  B.props.box(x - 0.6, 0.6, z - 0.6, x + 0.6, h * 0.75, z + 0.6, M_LEAF, 36, 86, 50, seed, M_LEAF, BOX_SIDES);
+  B.props.box(x - 0.38, h * 0.75, z - 0.38, x + 0.38, h, z + 0.38, M_LEAF, 36, 86, 50, seed + 1);
+  B.colliders.push(x - 0.3, z - 0.3, x + 0.3, z + 0.3);
+  B.maxH = Math.max(B.maxH, h);
+}
+
+/** A parked car, pointing along x or z; `sport` is lower and sleeker. */
+export function parkedCar(B: Builder, x: number, z: number, alongX: boolean, c: RGB, sport = false): void {
+  const hl = sport ? 2.25 : 2.15, hw = 0.9;
+  const top = sport ? 0.92 : 1.05;
+  const bx = (l: number, w: number, y0: number, y1: number, off: number, mat: number, cc: RGB, mask = BOX_SIDES | BOX_TOP) => {
+    const ox = alongX ? off : 0, oz = alongX ? 0 : off;
+    const ex = alongX ? l : w, ez = alongX ? w : l;
+    B.props.box(x + ox - ex, y0, z + oz - ez, x + ox + ex, y1, z + oz + ez, mat, cc[0], cc[1], cc[2], 0, mat, mask);
+  };
+  bx(hl, hw, 0.32, top, 0, M_CAR, c);
+  bx(sport ? 0.95 : 1.15, hw - 0.1, top, top + (sport ? 0.42 : 0.6), sport ? -0.35 : -0.25, M_GLASS, c);
+  for (const s of [-1, 1]) bx(0.34, hw + 0.02, 0, 0.62, s * (hl - 0.8), M_WHEEL, [0, 0, 0], BOX_SIDES);
+  B.colliders.push(x - (alongX ? hl : hw), z - (alongX ? hw : hl), x + (alongX ? hl : hw), z + (alongX ? hw : hl));
+}
+
+/**
+ * Dome of `rings` bands approximating a hemisphere of radius `r` sitting at height `y`, with `n` sides.
+ * Band corners run counter-clockwise seen from above, so each band faces outward.
+ */
+export function dome(list: FaceList, cx: number, y: number, cz: number, r: number, n: number, rings: number, mat: number, c: RGB, seed = 0): void {
+  for (let k = 0; k < rings; k++) {
+    const a0 = (k / rings) * Math.PI * 0.5, a1 = ((k + 1) / rings) * Math.PI * 0.5;
+    const r0 = r * Math.cos(a0), r1 = r * Math.cos(a1);
+    const y0 = y + r * Math.sin(a0), y1 = y + r * Math.sin(a1);
+    const arc = r * (a1 - a0);
+    for (let s = 0; s < n; s++) {
+      const t0 = (s / n) * Math.PI * 2, t1 = ((s + 1) / n) * Math.PI * 2;
+      const c0 = Math.cos(t0), s0 = Math.sin(t0), c1 = Math.cos(t1), s1 = Math.sin(t1);
+      const w0 = r0 * (t1 - t0), w1 = r1 * (t1 - t0);
+      list.poly(
+        cx + r0 * c0, y0, cz + r0 * s0, cx + r0 * c1, y0, cz + r0 * s1,
+        cx + r1 * c1, y1, cz + r1 * s1, cx + r1 * c0, y1, cz + r1 * s0,
+        0, y0, w0, y0, (w0 + w1) / 2, y0 + arc, (w0 - w1) / 2, y0 + arc,
+        mat, c[0], c[1], c[2], seed,
+      );
+    }
+  }
 }

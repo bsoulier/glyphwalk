@@ -4,13 +4,19 @@ import { M_RAIL } from '../render/materials';
 import { hash3, mulberry32 } from '../core/hash';
 import { type Builder, type Rect, streetLamps } from './build';
 import { BOX_N, BOX_S, BOX_SIDES, BOX_BOTTOM, BOX_TOP, FaceList } from './faces';
-import { HOODS, H_DOCKS, H_DOWNTOWN, H_JAPAN, H_OLDTOWN, H_PARIS, hoodAt } from './hoods';
+import {
+  HOODS, H_DOCKS, H_DOWNTOWN, H_ESTATES, H_JAPAN, H_MEDINA, H_OLDTOWN, H_PARIS, H_SEAFRONT, H_SUBURB, hoodAt,
+} from './hoods';
 import { LOT_EDGE, P, RAIL_Y, blockKind, worldSeed } from './layout';
 import { buildDocks } from './styles/docks';
 import { buildDowntown } from './styles/downtown';
 import { buildJapantown } from './styles/japantown';
 import { buildOldTown } from './styles/oldtown';
 import { buildParis } from './styles/paris';
+import { buildSuburb } from './styles/suburb';
+import { buildEstates } from './styles/estates';
+import { buildSeafront } from './styles/seafront';
+import { buildMedina } from './styles/medina';
 import type { Interior } from './interior';
 import { isRailRow } from './train';
 
@@ -165,6 +171,10 @@ export function generateBlock(i: number, j: number): Block {
     case H_OLDTOWN: buildOldTown(B, i, j, kind, lot); break;
     case H_PARIS: buildParis(B, i, j, kind, lot); break;
     case H_DOCKS: buildDocks(B, i, j, kind, lot); break;
+    case H_SUBURB: buildSuburb(B, i, j, kind, lot); break;
+    case H_ESTATES: buildEstates(B, i, j, kind, lot); break;
+    case H_SEAFRONT: buildSeafront(B, i, j, kind, lot); break;
+    case H_MEDINA: buildMedina(B, i, j, kind, lot); break;
     case H_DOWNTOWN:
     default: buildDowntown(B, i, j, kind, lot);
   }

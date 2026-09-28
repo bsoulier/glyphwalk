@@ -1,5 +1,5 @@
 import type { Camera } from '../render/camera';
-import { H_DOCKS, H_DOWNTOWN, H_JAPAN, H_OLDTOWN, H_PARIS } from '../world/hoods';
+import { H_DOCKS, H_DOWNTOWN, H_ESTATES, H_JAPAN, H_MEDINA, H_OLDTOWN, H_PARIS, H_SEAFRONT, H_SUBURB } from '../world/hoods';
 import type { Vehicle } from '../world/traffic';
 import type { EventMode } from '../world/events';
 import { Radio } from './radio';
@@ -43,6 +43,10 @@ interface Voice {
 
 /** Pentatonic notes for Japantown's wind chimes. */
 const CHIMES = [1568, 1760, 2093, 2349, 2637, 3136];
+/** D Hijaz, the scale of the Medina's oud: D Eb F# G A Bb C D. */
+const HIJAZ = [294, 311, 370, 392, 440, 466, 523, 587];
+/** The ice-cream van's tune, one bar of it. */
+const JINGLE = [659, 784, 880, 988, 880, 784, 659, 587, 659];
 
 /** Kinds of sound that can be switched off one by one. */
 export const SOUND_KINDS = ['ambience', 'traffic', 'lift', 'events', 'radio'] as const;
@@ -71,6 +75,7 @@ export class Sound {
   private sizzle!: AudioBuffer;
   private city!: GainNode;
   private wind!: GainNode;
+  private surf!: GainNode;
   private murmur!: GainNode;
   private fry!: GainNode;
   private hum!: GainNode;
@@ -178,6 +183,7 @@ export class Sound {
 
     this.city = this.bed('lowpass', 420, 0.7, this.outside('ambience'));
     this.wind = this.bed('bandpass', 380, 0.5, this.outside('ambience'));
+    this.surf = this.bed('lowpass', 520, 0.6, this.outside('ambience'));
     this.rumble = this.bed('lowpass', 160, 0.7, this.inside('traffic'));
     this.hum = this.bed('lowpass', 200, 0.7, this.inside('ambience'));
     this.motor = this.bed('lowpass', 110, 1.5, this.inside('lift'));
@@ -396,7 +402,8 @@ export class Sound {
     this.level(this.outdoor, out ? 1 : 0.55);
 
     // Snow hushes the city; the only sound left is a soft wind.
-    this.level(this.city, (s.hood === H_DOWNTOWN ? 0.35 : 0.22) * (s.cam.y > 60 ? 0.5 : 1) * (snow ? 0.5 : 1));
+    const hum = s.hood === H_DOWNTOWN ? 0.35 : s.hood === H_SUBURB || s.hood === H_ESTATES ? 0.1 : 0.22;
+    this.level(this.city, hum * (s.cam.y > 60 ? 0.5 : 1) * (snow ? 0.5 : 1));
     if (s.weather === 'rain') this.drops();
     this.level(this.wind, snow ? 0.12 : 0, 1.5);
     this.traffic(s);
@@ -519,7 +526,33 @@ export class Sound {
     if (neon && s.events === 'always' && this.every('neon', 5, 13)) this.neonZap(Math.random() * 1.4 - 0.7);
     if (neon && s.brownout && !this.inBrownout) for (let k = 0; k < 4; k++) this.neonZap(Math.random() * 1.6 - 0.8, k * 0.4);
     this.inBrownout = s.brownout;
+    // Surf rolls in on slow swells: a low rumble that rises and falls, never a hiss.
+    const swell = Math.max(0, Math.sin(this.t * 0.75)) ** 3;
+    this.level(this.surf, s.hood === H_SEAFRONT ? 0.03 + 0.09 * swell : 0, 0.5);
     switch (s.hood) {
+      case H_SUBURB:
+      case H_ESTATES:
+        if (s.night < 0.6) this.birds(o);
+        else if (this.every('cricket', 0.7, 2.2)) this.crickets(o);
+        if (s.hood === H_SUBURB && s.night < 0.5) {
+          if (this.every('dog', 30, 80)) this.bark(o);
+          if (this.every('icecream', 150, 300)) this.jingle(o);
+        }
+        if (s.hood === H_ESTATES && s.night < 0.5 && this.every('tennis', 45, 100)) {
+          const pan = Math.random() * 1.2 - 0.6;
+          for (let k = 0; k < 4 + Math.floor(Math.random() * 6); k++) this.tone(170 + Math.random() * 30, 0.06, 0.05, o, { delay: k * 0.95, pan: k & 1 ? pan : -pan, to: 120 });
+        }
+        break;
+      case H_SEAFRONT:
+        if (this.every('gullSea', 6, 16)) {
+          const pan = Math.random() * 1.6 - 0.8;
+          for (let k = 0; k < 3; k++) this.tone(1800, 0.22, 0.04, o, { to: 1200, delay: k * 0.28, pan });
+        }
+        break;
+      case H_MEDINA:
+        if (this.every('oud', 9, 22)) this.oud(o);
+        if (this.every('darbuka', 25, 55)) this.darbuka(o);
+        break;
       case H_JAPAN:
         if (this.every('chime', 4, 10)) this.windChime(Math.random() * 1.2 - 0.6);
         break;
@@ -536,10 +569,7 @@ export class Sound {
         if (this.every('bell', 45, 90)) this.bell(196, 4, o);
         break;
       case H_OLDTOWN:
-        if (s.night < 0.6 && this.every('bird', 1.5, 5)) {
-          const pan = Math.random() * 1.6 - 0.8, f = 3000 + Math.random() * 1500;
-          for (let k = 0; k < 2 + Math.floor(Math.random() * 3); k++) this.tone(f, 0.07, 0.03, o, { to: f * 1.3, delay: k * 0.11, pan });
-        }
+        if (s.night < 0.6) this.birds(o);
         if (this.every('bellOld', 70, 140)) this.bell(262, 3, o);
         break;
       case H_DOWNTOWN:
@@ -547,6 +577,59 @@ export class Sound {
           for (let k = 0; k < 4; k++) this.tone(720, 0.5, 0.03, o, { to: 1050, delay: k * 0.55, pan: 0.6 });
         }
         break;
+    }
+  }
+
+  /** A songbird somewhere nearby: a few quick rising chirps. */
+  private birds(o: AudioNode): void {
+    if (!this.every('bird', 1.5, 5)) return;
+    const pan = Math.random() * 1.6 - 0.8, f = 3000 + Math.random() * 1500;
+    for (let k = 0; k < 2 + Math.floor(Math.random() * 3); k++) this.tone(f, 0.07, 0.03, o, { to: f * 1.3, delay: k * 0.11, pan });
+  }
+
+  /** A cricket: three very short, very high pulses. */
+  private crickets(o: AudioNode): void {
+    const pan = Math.random() * 1.8 - 0.9, f = 4200 + Math.random() * 600;
+    for (let k = 0; k < 3; k++) this.tone(f, 0.025, 0.018, o, { delay: k * 0.06, pan });
+  }
+
+  /** A dog a few gardens away: two gruff falling barks. */
+  private bark(o: AudioNode): void {
+    const pan = Math.random() * 1.6 - 0.8;
+    for (let k = 0; k < 2; k++) {
+      this.tone(320, 0.12, 0.05, o, { type: 'sawtooth', to: 170, delay: k * 0.28, pan });
+      this.burst('bandpass', 700, 1.2, 0.08, 0.05, o, k * 0.28, pan);
+    }
+  }
+
+  /** The ice-cream van, a couple of streets away. */
+  private jingle(o: AudioNode): void {
+    const pan = Math.random() < 0.5 ? -0.6 : 0.6;
+    JINGLE.forEach((f, k) => this.tone(f, 0.2, 0.022, o, { type: 'square', delay: k * 0.24, pan }));
+  }
+
+  /** A phrase on the oud from an open window: plucked notes wandering the Hijaz scale. */
+  private oud(o: AudioNode): void {
+    const pan = Math.random() * 1.2 - 0.6;
+    let n = Math.floor(Math.random() * HIJAZ.length);
+    let delay = 0;
+    for (let k = 0; k < 5 + Math.floor(Math.random() * 4); k++) {
+      n = Math.max(0, Math.min(HIJAZ.length - 1, n + Math.floor(Math.random() * 5) - 2));
+      const f = HIJAZ[n] * (Math.random() < 0.2 ? 0.5 : 1);
+      this.tone(f, 0.5, 0.05, o, { type: 'triangle', delay, pan, attack: 0.003 });
+      this.tone(f * 2, 0.18, 0.015, o, { type: 'sawtooth', delay, pan, attack: 0.002 });
+      delay += 0.2 + Math.random() * 0.3;
+    }
+  }
+
+  /** A hand drum: deep "doum" and sharp "tek" strokes in a short rhythm. */
+  private darbuka(o: AudioNode): void {
+    const pan = Math.random() * 1.2 - 0.6;
+    const beats = 'D.tt.D.t.D.tt.D.t';
+    for (let k = 0; k < beats.length; k++) {
+      const delay = k * 0.16;
+      if (beats[k] === 'D') this.tone(120, 0.25, 0.1, o, { to: 70, delay, pan });
+      else if (beats[k] === 't') this.burst('highpass', 3000, 0.8, 0.04, 0.06, o, delay, pan);
     }
   }
 

@@ -3,12 +3,12 @@ import { M_AWNING, M_CLOTH, M_CONCRETE, M_GLOW, M_PAINT, M_SIGN, M_WOOD } from '
 import { drawBoxYaw, drawPanel, drawPoint, sphereVisible, stats } from '../render/raster';
 import { glyph } from '../core/charset';
 import { hash3, mulberry32 } from '../core/hash';
-import { HOOD_BLOCKS, H_DOWNTOWN, H_JAPAN, H_OLDTOWN, H_PARIS, hoodAt } from './hoods';
+import { HOOD_BLOCKS, H_DOWNTOWN, H_JAPAN, H_MEDINA, H_OLDTOWN, H_PARIS, H_SEAFRONT, H_SUBURB, hoodAt } from './hoods';
 import { P, worldSeed } from './layout';
 import { POSE_STAFF, POSE_STAND, POSE_STOOL, drawOccupants } from './occupants';
 import {
-  NEON, SIGN_CHAR_W, SIGN_H, SIGN_PAD, SIGN_TEXTS, STALLS_DOWNTOWN, STALLS_JAPAN, STALLS_OLDTOWN, STALLS_PARIS,
-  STEAMY, signSeed, type RGB,
+  BRASS_SIGNS, DECO_NEON, NEON, SIGN_CHAR_W, SIGN_H, SIGN_PAD, SIGN_TEXTS, STALLS_DOWNTOWN, STALLS_JAPAN, STALLS_MEDINA,
+  STALLS_OLDTOWN, STALLS_PARIS, STALLS_SEAFRONT, STALLS_SUBURB, STEAMY, signSeed, type RGB,
 } from './signs';
 
 /** Stall centre line, measured from the road centre: the kerb edge of the sidewalk, in line with the lamps. */
@@ -49,6 +49,18 @@ const LOOKS: Record<number, Look> = {
   [H_DOWNTOWN]: {
     texts: STALLS_DOWNTOWN, canopyMat: M_PAINT, canopy: [[40, 40, 52], [200, 50, 90], [30, 120, 150]],
     sign: NEON, wood: [70, 72, 80], stools: false,
+  },
+  [H_SUBURB]: {
+    texts: STALLS_SUBURB, canopyMat: M_AWNING, canopy: [[0, 0, 0]],
+    sign: [[255, 230, 180], [255, 200, 120]], wood: [180, 150, 110], stools: false,
+  },
+  [H_SEAFRONT]: {
+    texts: STALLS_SEAFRONT, canopyMat: M_PAINT, canopy: [[250, 190, 200], [180, 230, 210], [250, 236, 170], [170, 215, 240]],
+    sign: DECO_NEON, wood: [200, 190, 170], stools: true,
+  },
+  [H_MEDINA]: {
+    texts: STALLS_MEDINA, canopyMat: M_CLOTH, canopy: [[220, 150, 40], [40, 60, 140], [170, 40, 40], [230, 220, 200]],
+    sign: BRASS_SIGNS, wood: [120, 80, 50], stools: true,
   },
 };
 
@@ -186,7 +198,7 @@ function build(i: number, j: number): BlockMarket {
       seed: Math.floor(rnd() * 4),
       sign: pick(look.sign),
       canopy: pick(look.canopy),
-      light: hood === H_DOWNTOWN ? pick(NEON) : hood === H_JAPAN ? [255, 80, 50] : [255, 200, 120],
+      light: hood === H_DOWNTOWN ? pick(NEON) : hood === H_SEAFRONT ? pick(DECO_NEON) : hood === H_JAPAN ? [255, 80, 50] : [255, 200, 120],
       steam: STEAMY.includes(text),
       stools: look.stools,
       goods: [0, 1, 2].map(() => pick([[220, 60, 50], [240, 200, 90], [90, 170, 80], [230, 230, 220], [160, 90, 50]] as RGB[])),
@@ -260,6 +272,7 @@ function lights(s: Stall, time: number, near: boolean): void {
   const c = s.light;
   switch (s.hood) {
     case H_JAPAN:
+    case H_MEDINA:
       for (const sx of [-1.5, 1.5]) {
         const [x, z] = at(s, sx, 1.18);
         const sway = Math.sin(time * 1.1 + s.x) * 0.02;
@@ -268,6 +281,7 @@ function lights(s: Stall, time: number, near: boolean): void {
       }
       break;
     case H_PARIS:
+    case H_SUBURB:
       // A string of bulbs along the front edge of the awning, sagging between its ends.
       for (let k = 0; k <= 8; k++) {
         const lx = -1.6 + k * 0.4;
@@ -283,7 +297,8 @@ function lights(s: Stall, time: number, near: boolean): void {
       else drawPoint(x, 2.12, z, G_o, 255, 170, 70, 0.5, 1);
       break;
     }
-    case H_DOWNTOWN: {
+    case H_DOWNTOWN:
+    case H_SEAFRONT: {
       const [x, z] = at(s, 0, 1.3);
       if (near) drawBoxYaw(x, 2.43, z, s.yaw, 1.72, 0.03, 0.02, M_GLOW, c[0], c[1], c[2], 0);
       else drawPoint(x, 2.43, z, G_STAR, c[0], c[1], c[2], 0.5, 1);

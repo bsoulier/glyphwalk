@@ -1,6 +1,8 @@
 import { glyph } from '../core/charset';
 import { hash2, hash3, valueNoise } from '../core/hash';
-import { HOODS, H_DOCKS, H_DOWNTOWN, H_JAPAN, H_OLDTOWN, H_PARIS, hoodAt } from '../world/hoods';
+import {
+  HOODS, H_DOCKS, H_DOWNTOWN, H_ESTATES, H_JAPAN, H_MEDINA, H_OLDTOWN, H_PARIS, H_SEAFRONT, H_SUBURB, hoodAt, isBeach,
+} from '../world/hoods';
 import {
   HALF, KIND_CITY, KIND_PARK, KIND_PLAZA, LAMP_OFF, LAMP_SPACING, LOT_EDGE, P, ROAD_HALF, blockKind, hasPond,
 } from '../world/layout';
@@ -68,6 +70,8 @@ let R = 0;
 let G = 0;
 let B = 0;
 let BK = 0.2;
+/** Open water, which snow does not settle on. */
+let SEA = false;
 
 /**
  * `fp` is the ground footprint of one cell in metres; details thinner than that are dropped or widened.
@@ -82,11 +86,12 @@ export function groundCell(o: number, X: number, Z: number, t: number, fp: numbe
   const ax = sx < 0 ? -sx : sx, az = sz < 0 ? -sz : sz;
   const hood = hoodAt(bi, bj);
   BK = 0.2;
+  SEA = false;
   const onX = ax < ROAD_HALF, onZ = az < ROAD_HALF;
   if (onX || onZ) road(hood, X, Z, onX, onZ, ax, az, sx, sz, lx, lz, fp);
   else if (ax < LOT_EDGE || az < LOT_EDGE) sidewalk(hood, X, Z, ax, az, fp);
   else lot(hood, bi, bj, X, Z, lx - HALF, lz - HALF, fp);
-  if (snow) {
+  if (snow && !SEA) {
     // Roads are churned to grey slush with darker tyre tracks; everything else lies under snow.
     let k = 0.85;
     if (onX || onZ) {
@@ -151,10 +156,13 @@ function road(
   ax: number, az: number, sx: number, sz: number, lx: number, lz: number, fp: number,
 ): void {
   if (hood === H_OLDTOWN) cobbles(X, Z, fp, 92, 84, 74);
+  else if (hood === H_MEDINA) cobbles(X, Z, fp, 150, 124, 92);
   else {
     if (hood === H_DOCKS) { R = 80; G = 78; B = 74; BK = 0.3; }
     else if (hood === H_PARIS) { R = 56; G = 58; B = 70; }
     else if (hood === H_JAPAN) { R = 62; G = 62; B = 68; }
+    else if (hood === H_SUBURB) { R = 66; G = 66; B = 68; }
+    else if (hood === H_ESTATES) { R = 42; G = 44; B = 48; }
     else { R = 50; G = 54; B = 62; }
     if (hood === H_DOCKS && fp < 0.3) {
       const jx = X / 4 - Math.floor(X / 4), jz = Z / 4 - Math.floor(Z / 4);
@@ -198,6 +206,8 @@ function markings(
     }
     return;
   }
+  // Residential streets have no lane lines, only the stop lines and crossings above.
+  if (hood === H_SUBURB || hood === H_ESTATES) return;
   const w = fp * 0.45 > 0.12 ? fp * 0.45 : 0.12;
   if (hood !== H_JAPAN && a < w && (hood === H_DOCKS || fp > 1.2 || (Math.floor(along / 3) & 1) === 0)) {
     GL = lineGlyph(onX); BK = 0.3;
@@ -233,6 +243,9 @@ function sidewalk(hood: number, X: number, Z: number, ax: number, az: number, fp
     case H_OLDTOWN: R = 104; G = 96; B = 86; tile = 0.9; break;
     case H_PARIS: R = 140; G = 130; B = 110; tile = 1.2; break;
     case H_DOCKS: R = 88; G = 88; B = 86; tile = 3; break;
+    case H_SUBURB: R = 150; G = 146; B = 138; tile = 1.5; break;
+    case H_ESTATES: R = 150; G = 140; B = 122; tile = 0.9; break;
+    case H_MEDINA: R = 172; G = 142; B = 104; tile = 0.8; break;
     default: R = 118; G = 118; B = 122; tile = 2;
   }
   const kerb = ROAD_HALF + (fp > 0.3 ? fp : 0.3);
@@ -247,10 +260,17 @@ function sidewalk(hood: number, X: number, Z: number, ax: number, az: number, fp
     }
     return;
   }
+  const m = ax < az ? ax : az;
+  // Grass verge between the kerb and the footpath, where the street trees and lamps stand.
+  if ((hood === H_SUBURB && m < 7.7) || (hood === H_ESTATES && m < 8.8)) {
+    lawn(X, Z, fp, hood === H_ESTATES ? 1.1 : 0.95, false);
+    return;
+  }
+  if (hood === H_SEAFRONT) return promenade(X, Z, az < ax, fp);
   const inv = 1 / tile, f = fp * inv;
   if (f < 0.16) {
     const c = Z * inv;
-    const a = X * inv + (hood === H_OLDTOWN ? (Math.floor(c) & 1) * 0.5 : 0);
+    const a = X * inv + (hood === H_OLDTOWN || hood === H_MEDINA ? (Math.floor(c) & 1) * 0.5 : 0);
     const w = 0.05 * inv;
     const eu = joint(a, w, f), ev = joint(c, w, f);
     GL = eu && ev ? G_PLUS : eu ? lineGlyph(true) : ev ? lineGlyph(false) : G_DOT;
@@ -259,6 +279,7 @@ function sidewalk(hood: number, X: number, Z: number, ax: number, az: number, fp
 
 /** Courtyards, parks and squares. `dx`, `dz` are offsets from the block centre. */
 function lot(hood: number, bi: number, bj: number, X: number, Z: number, dx: number, dz: number, fp: number): void {
+  if (hood === H_SEAFRONT && isBeach(bi, bj)) return beach(X, dz, fp);
   const kind = blockKind(bi, bj);
   if (kind === KIND_CITY) {
     switch (hood) {
@@ -266,9 +287,14 @@ function lot(hood: number, bi: number, bj: number, X: number, Z: number, dx: num
       case H_JAPAN: gravel(X, Z, 118, 116, 108); return;
       case H_PARIS: gravel(X, Z, 130, 120, 100); return;
       case H_DOCKS: GL = G_DOT; R = 70; G = 70; B = 68; return;
+      case H_SUBURB: lawn(X, Z, fp, 1, true); return;
+      case H_ESTATES: lawn(X, Z, fp, 1.15, true); return;
+      case H_SEAFRONT: sand(X, Z, fp, 1); return;
+      case H_MEDINA: gravel(X, Z, 164, 132, 96); return;
       default: checker(X, Z, fp); return;
     }
   }
+  if (hood === H_MEDINA && kind === KIND_PLAZA) return cobbles(X, Z, fp, 176, 146, 106);
   if (hood === H_DOCKS) return yard(X, Z, fp);
   const pond = kind === KIND_PARK && (hood === H_DOWNTOWN || hood === H_JAPAN) && hasPond(bi, bj);
   if (pond && dx * dx + dz * dz < 81) {
@@ -290,6 +316,15 @@ function lot(hood: number, bi: number, bj: number, X: number, Z: number, dx: num
       if (adx > 7 && adx < 15 && adz > 7 && adz < 15) grass(X, Z, fp);
       else gravel(X, Z, 152, 140, 112);
       return;
+    case H_SUBURB:
+    case H_ESTATES:
+      if (adx < 1.6 || adz < 1.6) { GL = G_DOT; R = 150; G = 140; B = 118; BK = 0.35; }
+      else lawn(X, Z, fp, 1, false);
+      return;
+    case H_SEAFRONT:
+      if (adx < 1.6 || adz < 1.6) promenade(X, Z, adx > adz, fp);
+      else sand(X, Z, fp, 1);
+      return;
     default:
       if (kind === KIND_PLAZA) checker(X, Z, fp);
       else if (adx < 1.6 || adz < 1.6) { GL = G_DOT; R = 120; G = 108; B = 84; }
@@ -302,6 +337,56 @@ function grass(X: number, Z: number, fp: number): void {
   GL = fp < 0.6 ? GRASS[h & 3] : G_COMMA;
   const q = 0.8 + ((h >> 4) & 15) / 60;
   R = 40 * q; G = 96 * q; B = 48 * q;
+}
+
+/** Mown lawn: grass glyphs, with light and dark mowing stripes on private lawns until they merge. */
+function lawn(X: number, Z: number, fp: number, k: number, stripes: boolean): void {
+  const h = hash2(Math.floor(X * 2), Math.floor(Z * 2));
+  GL = fp < 0.6 ? GRASS[h & 3] : G_COMMA;
+  let q = k * (0.9 + ((h >> 4) & 15) / 90);
+  if (stripes && fp < 0.8) q *= (Math.floor(X / 1.8) & 1) === 0 ? 1.12 : 0.9;
+  R = 46 * q; G = 118 * q; B = 50 * q; BK = 0.3;
+}
+
+function sand(X: number, Z: number, fp: number, k: number): void {
+  const h = hash2(Math.floor(X * 3), Math.floor(Z * 3));
+  GL = fp < 0.5 && (h & 7) === 0 ? G_COMMA : G_DOT;
+  const q = k * (0.94 + (h & 15) / 160);
+  R = 214 * q; G = 190 * q; B = 142 * q; BK = 0.55;
+}
+
+/**
+ * Seafront promenade in the black-and-white wave mosaic of a beach boulevard; the waves run along the
+ * street. `alongX` is true for the sidewalks beside roads that run along x.
+ */
+function promenade(X: number, Z: number, alongX: boolean, fp: number): void {
+  if (fp > 0.6) { GL = G_DOT; R = 140; G = 134; B = 128; BK = 0.45; return; }
+  const a = alongX ? X : Z, c = alongX ? Z : X;
+  const w = c * 0.9 + Math.sin(a * 0.75) * 0.9;
+  const dark = (Math.floor(w) & 1) === 1;
+  GL = dark ? G_COLON : G_DOT;
+  if (dark) { R = 52; G = 50; B = 54; } else { R = 214; G = 208; B = 196; }
+  BK = 0.5;
+}
+
+/** Beach blocks: dry sand, a wet band and foam where the swash runs up, then the sea deepening away from it. */
+function beach(X: number, dz: number, fp: number): void {
+  const shore = 1.5 + Math.sin(X * 0.07 + time * 0.55) * 0.7 + Math.sin(X * 0.19 - time * 0.3) * 0.3;
+  const d = dz - shore;
+  if (d < -1.4) return sand(X, dz, fp, 1);
+  if (d < 0) {
+    sand(X, dz, fp, 0.78);
+    GL = G_DOT;
+    return;
+  }
+  SEA = true;
+  if (d < 0.8 && fp < 1.2) {
+    GL = G_TILDE; R = 228; G = 236; B = 240; BK = 0.55;
+    return;
+  }
+  const deep = d > 16 ? 1 : d / 16;
+  R = 64 - 34 * deep; G = 176 - 94 * deep; B = 186 - 36 * deep; BK = 0.45;
+  GL = fp > 0.6 || ((Math.floor(X * 1.1 + time * 1.2) + Math.floor(dz * 2)) & 3) === 0 ? G_TILDE : G_DASH;
 }
 
 function gravel(X: number, Z: number, r: number, g: number, b: number): void {

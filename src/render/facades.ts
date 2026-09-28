@@ -13,13 +13,21 @@ export const F_BRICK = 2;
 export const F_STONE = 3;
 export const F_WOOD = 4;
 export const F_METAL = 5;
+export const F_SIDING = 6;
+export const F_DECO = 7;
+export const F_ADOBE = 8;
+export const F_VILLA = 9;
 
 /** Storey heights per facade; building heights are built as multiples so the top floor is whole. */
-export const FLOOR_H = [3.2, 3.6, 3.0, 3.3, 3.0, 4.5];
+export const FLOOR_H = [3.2, 3.6, 3.0, 3.3, 3.0, 4.5, 3.0, 3.2, 3.2, 3.6];
 
-/** Seed bits: style 0-1, lit level 2-4, warm 5, id 6-17, facade 18-20. Stays under 2^24 for Float32. */
+/** Seed bits: style 0-1, lit level 2-4, warm 5, id 6-17, facade 18-21. Stays under 2^24 for Float32. */
 export function facadeSeed(facade: number, style: number, lit: number, warm: number, id: number): number {
-  return (style & 3) | ((lit & 7) << 2) | ((warm & 1) << 5) | ((id & 4095) << 6) | ((facade & 7) << 18);
+  return (style & 3) | ((lit & 7) << 2) | ((warm & 1) << 5) | ((id & 4095) << 6) | ((facade & 15) << 18);
+}
+
+export function facadeOf(seed: number): number {
+  return (seed >> 18) & 15;
 }
 
 /** Window opening inside one bay of one storey, as fractions of the bay: u0, u1, v0, v1. */
@@ -41,12 +49,18 @@ const GENERIC_WIN: readonly WinRect[] = [[0.22, 0.78, 0.3, 0.85], [0, 1, 0.35, 0
  */
 export function facadeWindows(seed: number): FacadeWindows {
   const style = seed & 3;
-  switch ((seed >> 18) & 7) {
+  switch (facadeOf(seed)) {
     case F_GLASS: return { colW: 1.6, ground: [0.03, 1, 0.06, 1], upper: [0.03, 1, 0.06, 1] };
     case F_BRICK: return { colW: 2.4, ground: [0.2, 0.8, 0, 0.72], upper: [0.3, 0.7, 0.25, 0.8] };
     case F_STONE: return { colW: 2.3, ground: [0.14, 0.86, 0, 0.86], upper: [0.3, 0.7, 0.06, 0.88] };
     case F_WOOD: return { colW: 1.8, ground: [0.1, 0.9, 0, 0.75], upper: [0.2, 0.8, 0.3, 0.82] };
     case F_METAL: return { colW: 6, ground: null, upper: [0, 0.5, 0.55, 0.85] };
+    case F_SIDING: return { colW: 2.8, ground: [0.3, 0.7, 0.3, 0.8], upper: [0.3, 0.7, 0.3, 0.8] };
+    case F_DECO: return { colW: 2.6, ground: [0.08, 0.92, 0.04, 0.74], upper: style === 1 ? [0, 1, 0.3, 0.74] : [0.22, 0.78, 0.28, 0.78] };
+    case F_ADOBE: return { colW: 3, ground: [0.3, 0.7, 0, 0.62], upper: [0.4, 0.6, 0.3, 0.62] };
+    case F_VILLA: return style < 2
+      ? { colW: 3.2, ground: [0.3, 0.7, 0.04, 0.82], upper: [0.3, 0.7, 0.1, 0.82] }
+      : { colW: 3.2, ground: [0.03, 0.97, 0.04, 0.92], upper: [0.03, 0.97, 0.04, 0.92] };
     default: return { colW: COL_W[style], ground: [0.08, 0.92, 0.06, 0.72], upper: GENERIC_WIN[style] };
   }
 }
@@ -75,6 +89,10 @@ const GROUND_GENERIC: WinRect = [0.08, 0.92, 0.06, 0.72];
 const W_BRICK = facadeWindows(F_BRICK << 18);
 const W_STONE = facadeWindows(F_STONE << 18);
 const W_WOOD = facadeWindows(F_WOOD << 18);
+const W_SIDING = facadeWindows(F_SIDING << 18);
+const W_ADOBE = facadeWindows(F_ADOBE << 18);
+const TRIM: readonly [number, number, number] = [236, 232, 222];
+const ZELLIGE: readonly (readonly [number, number, number])[] = [[40, 90, 170], [30, 130, 110], [230, 226, 210], [200, 140, 50]];
 
 const SHOP: readonly (readonly [number, number, number])[] = [
   [255, 170, 90], [255, 110, 190], [120, 240, 220], [255, 230, 140],
@@ -92,12 +110,16 @@ const SIGN_BITS = SIGN_TEXTS.map((t) => Array.from(t, (c) => fontBits(c)));
 const SIGN_BAND = SIGN_H - 2 * SIGN_BAND_PAD;
 
 export function wall(i: number, u: number, v: number, z: number, r: number, g: number, b: number, sh: number, seed: number): void {
-  switch ((seed >> 18) & 7) {
+  switch (facadeOf(seed)) {
     case F_GLASS: glass(i, u, v, z, r, g, b, sh, seed); break;
     case F_BRICK: brick(i, u, v, z, r, g, b, sh, seed); break;
     case F_STONE: stone(i, u, v, z, r, g, b, sh, seed); break;
     case F_WOOD: wood(i, u, v, z, r, g, b, sh, seed); break;
     case F_METAL: metal(i, u, v, z, r, g, b, sh, seed); break;
+    case F_SIDING: siding(i, u, v, z, r, g, b, sh, seed); break;
+    case F_DECO: deco(i, u, v, z, r, g, b, sh, seed); break;
+    case F_ADOBE: adobe(i, u, v, z, r, g, b, sh, seed); break;
+    case F_VILLA: villa(i, u, v, z, r, g, b, sh, seed); break;
     default: generic(i, u, v, z, r, g, b, sh, seed);
   }
 }
@@ -337,6 +359,219 @@ function metal(i: number, u: number, v: number, z: number, r: number, g: number,
     return;
   }
   put(i, fxC / z > 3 ? G_PIPE : G_COLON, r * k, g * k, b * k, 0.35, z, 0);
+}
+
+/**
+ * Suburban house: lap siding (style 0-1), brick (2) or stucco (3). Sash windows with a white trim, a
+ * cross of glazing bars and painted shutters; lamps come on behind them one house at a time.
+ */
+function siding(i: number, u: number, v: number, z: number, r: number, g: number, b: number, sh: number, seed: number): void {
+  const style = seed & 3;
+  const colW = W_SIDING.colW, fh = FLOOR_H[F_SIDING];
+  const litP = litThreshold(seed, 0.3);
+  const cellsU = (colW * fxC) / z, cellsV = (fh * fyC) / z;
+  const fu = u / colW, fv = v / fh;
+  const cu = Math.floor(fu), cv = Math.floor(fv);
+  const k = sh * 0.9;
+  if (cellsU >= 2.2 && cellsV >= 2) {
+    const lu = fu - cu, lv = fv - cv;
+    const w = W_SIDING.upper;
+    const tu = 1 / cellsU, tv = 1 / cellsV;
+    if (lv > w[2] - tv && lv < w[3] + tv) {
+      if (inWin(w, lu, lv)) {
+        const lit = (hash3(seed, cu, cv) & 1023) < litP;
+        const bar = Math.abs(lu - 0.5) * cellsU < 0.5 || Math.abs(lv - (w[2] + w[3]) / 2) * cellsV < 0.5;
+        if (lit) put(i, bar ? G_PLUS : G_MED, 255, 206, 132, 0.45, z, 1);
+        else put(i, bar ? G_PLUS : G_DOT, 44, 52, 66, 0.55, z, 0);
+        return;
+      }
+      if (lu > w[0] - tu && lu < w[1] + tu) {
+        put(i, G_HASH, TRIM[0] * k, TRIM[1] * k, TRIM[2] * k, 0.7, z, 0);
+        return;
+      }
+      if (lv > w[2] && lv < w[3] && ((lu > w[0] - 0.17 && lu < w[0]) || (lu > w[1] && lu < w[1] + 0.17))) {
+        const s = SHUTTERS[(seed >> 6) & 3];
+        put(i, G_EQ, s[0] * sh, s[1] * sh, s[2] * sh, 0.55, z, 0);
+        return;
+      }
+    }
+    const rpm = fyC / z;
+    if (style < 2 && rpm > 6) {
+      const bv = v / 0.2;
+      const edge = (bv - Math.floor(bv)) * 0.2 * rpm < 1;
+      put(i, edge ? G_US : G_SPACE, r * k * 0.8, g * k * 0.8, b * k * 0.8, 0.62, z, 0);
+    } else if (style === 2 && rpm > 8) {
+      const course = Math.floor(v / 0.25);
+      const q = k * (0.84 + (hash2(Math.floor((u + (course & 1) * 0.25) / 0.5), course) & 31) / 130);
+      put(i, (v / 0.25 - course) * 0.25 * rpm < 1 ? G_US : G_EQ, r * q, g * q, b * q, 0.4, z, 0);
+    } else put(i, style === 3 ? G_SPACE : G_DASH, r * k, g * k, b * k, 0.6, z, 0);
+    return;
+  }
+  farWindows(i, cu, cv, cellsU, cellsV, seed, litP, 255, 206, 132, G_COLON, r * k, g * k, b * k, G_SPACE, 0.6, z);
+}
+
+/**
+ * Seafront Art Deco in pastel render: square windows under "eyebrow" ledges (style 0), ribbon windows
+ * with speed lines (1), portholes (2), or a glass-block stair tower every third bay (3). The neon outlines
+ * are separate geometry, so they can glow while the render stays lit by the sky.
+ */
+function deco(i: number, u: number, v: number, z: number, r: number, g: number, b: number, sh: number, seed: number): void {
+  const style = seed & 3;
+  const colW = 2.6, fh = FLOOR_H[F_DECO];
+  const litP = litThreshold(seed, 0.22);
+  const cellsU = (colW * fxC) / z, cellsV = (fh * fyC) / z;
+  const fu = u / colW, fv = v / fh;
+  const cu = Math.floor(fu), cv = Math.floor(fv);
+  const k = sh * 0.95;
+  const warm = (seed >> 5) & 1;
+  const lr = warm ? 255 : 200, lg = warm ? 214 : 236, lb = warm ? 150 : 255;
+  if (cellsU >= 2.2 && cellsV >= 2) {
+    const lu = fu - cu, lv = fv - cv;
+    if (cv === 0) {
+      if (lu > 0.08 && lu < 0.92 && lv > 0.04 && lv < 0.74) {
+        shopWindow(i, u, v, z, hash3(seed, cu, 0));
+        return;
+      }
+      if (lv > 0.8 && lv < 0.9) {
+        put(i, G_EQ, TRIM[0] * k, TRIM[1] * k, TRIM[2] * k, 0.6, z, 0);
+        return;
+      }
+      put(i, G_SPACE, r * k, g * k, b * k, 0.62, z, 0);
+      return;
+    }
+    const h = hash3(seed, cu, cv);
+    const lit = (h & 1023) < litP;
+    const q = 0.75 + ((h >>> 10) & 63) / 250;
+    let inside = false;
+    let ledge = false;
+    if (style === 1) {
+      inside = lv > 0.3 && lv < 0.74 && lu * cellsU >= 0.5;
+      ledge = lv > 0.12 && lv < 0.24 && Math.floor(lv * 25) % 2 === 0;
+    } else if (style === 2) {
+      const dx = (lu - 0.5) * colW, dy = (lv - 0.52) * fh;
+      inside = dx * dx + dy * dy < 0.34;
+    } else if (style === 3 && cu % 3 === 1) {
+      if (lu > 0.3 && lu < 0.7) {
+        const bu = u / 0.25, bv = v / 0.25;
+        const joint = (bu - Math.floor(bu)) * 0.25 * (fxC / z) < 1 || (bv - Math.floor(bv)) * 0.25 * (fyC / z) < 1;
+        put(i, joint ? G_PLUS : G_MED, 150 + 80 * (lit ? 1 : 0), 200 + 40 * (lit ? 1 : 0), 220, 0.5, z, lit ? 1 : 0);
+        return;
+      }
+    } else {
+      inside = lu > 0.22 && lu < 0.78 && lv > 0.28 && lv < 0.78;
+      ledge = lu > 0.14 && lu < 0.86 && lv > 0.8 && lv < 0.88;
+    }
+    if (inside) {
+      if (lit) put(i, G_HASH, lr * q, lg * q, lb * q, 0.4, z, 1);
+      else put(i, G_DOT, 40, 60, 80, 0.55, z, 0);
+      return;
+    }
+    if (ledge) {
+      put(i, G_EQ, TRIM[0] * k, TRIM[1] * k, TRIM[2] * k, 0.65, z, 0);
+      return;
+    }
+    put(i, G_SPACE, r * k, g * k, b * k, 0.62, z, 0);
+    return;
+  }
+  farWindows(i, cu, cv, cellsU, cellsV, seed, litP, lr, lg, lb, G_COLON, r * k, g * k, b * k, G_SPACE, 0.62, z);
+}
+
+/**
+ * Medina plaster, rough and sun-bleached: few, small windows with pointed-arch heads, some behind carved
+ * wooden screens, arched shop fronts, and a band of zellige tiles along the foot of the wall.
+ */
+function adobe(i: number, u: number, v: number, z: number, r: number, g: number, b: number, sh: number, seed: number): void {
+  const colW = W_ADOBE.colW, fh = FLOOR_H[F_ADOBE];
+  const litP = litThreshold(seed, 0.3);
+  const cellsU = (colW * fxC) / z, cellsV = (fh * fyC) / z;
+  const fu = u / colW, fv = v / fh;
+  const cu = Math.floor(fu), cv = Math.floor(fv);
+  const k = sh * 0.92;
+  if (cellsU >= 2.2 && cellsV >= 2) {
+    const lu = fu - cu, lv = fv - cv;
+    const h = hash3(seed, cu, cv);
+    const dx = (lu - 0.5) * colW;
+    if (cv === 0) {
+      const top = 0.62 * fh, half = 0.2 * colW;
+      const dy = v - top;
+      if (Math.abs(dx) < half && (v < top || dx * dx + dy * dy * 1.6 < half * half)) {
+        if ((h & 3) === 0) put(i, G_EQ, 96, 60, 36, 0.6, z, 0);
+        else if ((h & 3) === 1) put(i, G_DOT, 30, 26, 24, 0.55, z, 0);
+        else put(i, G_MED, 255, 176, 90, 0.5, z, 1);
+        return;
+      }
+      if (v < 0.5 && fyC / z > 6) {
+        const tu = Math.floor(u / 0.14), tv = Math.floor(v / 0.14);
+        const c = ZELLIGE[hash2(tu >> 1, tv >> 1) & 3];
+        put(i, ((tu + tv) & 1) === 0 ? G_PLUS : G_HASH, c[0] * sh, c[1] * sh, c[2] * sh, 0.6, z, 0);
+        return;
+      }
+    } else if ((h & 3) !== 0) {
+      const top = (cv + 0.62) * fh, half = 0.1 * colW;
+      const dy = v - top;
+      if (Math.abs(dx) < half && lv > 0.3 && (v < top || dx * dx + dy * dy * 1.6 < half * half)) {
+        if ((h & 3) === 1) {
+          const lattice = ((Math.floor(u / 0.1) + Math.floor(v / 0.1)) & 1) === 0;
+          put(i, lattice ? G_HASH : G_PLUS, 110, 70, 40, 0.55, z, 0);
+        } else if ((h & 1023) < litP * 1.4) put(i, G_MED, 255, 190, 110, 0.45, z, 1);
+        else put(i, G_DOT, 34, 28, 26, 0.6, z, 0);
+        return;
+      }
+    }
+    const n = hash2(Math.floor(u * 3), Math.floor(v * 3));
+    const q = k * (0.9 + (n & 15) / 110);
+    put(i, (n & 7) === 0 ? G_COLON : G_DOT, r * q, g * q, b * q, 0.64, z, 0);
+    return;
+  }
+  farWindows(i, cu, cv, cellsU, cellsV, seed, litP * 0.6, 255, 190, 110, G_COLON, r * k, g * k, b * k, G_DOT, 0.64, z);
+}
+
+/**
+ * Silver Hills villas. Classical (style 0-1): tall French windows in stone surrounds, a cornice line
+ * under each floor and rusticated ground floor. Modern (2-3): storey-high glazing between white slabs.
+ */
+function villa(i: number, u: number, v: number, z: number, r: number, g: number, b: number, sh: number, seed: number): void {
+  const style = seed & 3;
+  const colW = 3.2, fh = FLOOR_H[F_VILLA];
+  const litP = litThreshold(seed, 0.3);
+  const cellsU = (colW * fxC) / z, cellsV = (fh * fyC) / z;
+  const fu = u / colW, fv = v / fh;
+  const cu = Math.floor(fu), cv = Math.floor(fv);
+  const k = sh * 0.95;
+  if (cellsU >= 2.2 && cellsV >= 2) {
+    const lu = fu - cu, lv = fv - cv;
+    const h = hash3(seed, cu, cv);
+    const lit = (h & 1023) < litP;
+    const q = 0.75 + ((h >>> 10) & 63) / 250;
+    if (style >= 2) {
+      if (lv > 0.92) { put(i, G_EQ, TRIM[0] * k, TRIM[1] * k, TRIM[2] * k, 0.65, z, 0); return; }
+      if (lu * cellsU < 1) { put(i, G_PIPE, 30 * sh, 30 * sh, 34 * sh, 0.4, z, 0); return; }
+      if (lit) put(i, G_MED, 255 * q, 214 * q, 150 * q, 0.5, z, 1);
+      else put(i, G_SLASH, r * 0.3 * sh + 20, g * 0.35 * sh + 30, b * 0.4 * sh + 44, 0.45, z, 0);
+      return;
+    }
+    const w0 = 0.3, w1 = 0.7, v0 = cv === 0 ? 0.04 : 0.1, v1 = 0.82;
+    const tu = 1 / cellsU, tv = 1 / cellsV;
+    if (lu > w0 && lu < w1 && lv > v0 && lv < v1) {
+      const bar = Math.abs(lu - 0.5) * cellsU < 0.5;
+      if (lit) put(i, bar ? G_PIPE : G_HASH, 255 * q, 212 * q, 140 * q, 0.42, z, 1);
+      else put(i, bar ? G_PIPE : G_DOT, 36, 42, 56, 0.55, z, 0);
+      return;
+    }
+    if (lu > w0 - tu && lu < w1 + tu && lv > v0 - tv && lv < v1 + tv * 2) {
+      put(i, G_HASH, TRIM[0] * k, TRIM[1] * k, TRIM[2] * k, 0.7, z, 0);
+      return;
+    }
+    if (lv > 0.95) { put(i, G_EQ, TRIM[0] * k, TRIM[1] * k, TRIM[2] * k, 0.6, z, 0); return; }
+    if (cv === 0 && fyC / z > 6) {
+      const gv = v / 0.4;
+      put(i, (gv - Math.floor(gv)) * 0.4 * (fyC / z) < 1 ? G_DASH : G_SPACE, r * k * 0.85, g * k * 0.85, b * k * 0.85, 0.62, z, 0);
+      return;
+    }
+    put(i, G_SPACE, r * k, g * k, b * k, 0.64, z, 0);
+    return;
+  }
+  farWindows(i, cu, cv, cellsU, cellsV, seed, litP, 255, 212, 140, G_COLON, r * k, g * k, b * k, G_SPACE, 0.64, z);
 }
 
 /** Pitched tile roofs; rows of `^` read as a roof at any size, collapsing to `=` far away. */
