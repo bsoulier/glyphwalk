@@ -9,6 +9,7 @@ import { CanvasPresenter, STYLE_NAMES, WebGLPresenter, type Presenter } from './
 import { Rain } from './render/rain';
 import { stats } from './render/raster';
 import { type FrameEnv, renderScene } from './render/scene';
+import { setGroundDebug } from './render/ground';
 import { CHARSET } from './core/charset';
 import { Input } from './game/input';
 import { type TouchButton, TouchControls, touchDevice } from './game/touch';
@@ -78,6 +79,8 @@ document.addEventListener('visibilitychange', () => {
 const clock = new Clock();
 const gif = new GifRecorder();
 if (import.meta.env.DEV) Object.assign(window, { glyphwalk: { world, player, sound, clock, quality, gif, get tour() { return tour; } } });
+// ?ground=flat or ?ground=zones (dev only): ground cells as solid colour, to check where lines really fall.
+if (import.meta.env.DEV) setGroundDebug(params.get('ground') === 'flat' ? 'flat' : params.get('ground') === 'zones' ? 'zones' : null);
 
 // Bookmarkable views (Share / L builds these): ?cam=x,y,z,yaw,pitch&mode=walk&floor=4&time=cycle&hour=18.4&weather=rain
 const camParam = params.get('cam')?.split(',').map(Number);

@@ -73,11 +73,18 @@ export function drawBackground(fb: FrameBuffer, cam: Camera, env: SkyEnv): void 
       const dYN = uY * vyN + fY;
       const tN = dYN < -1e-6 ? -camY / dYN : far;
       const fp = Math.max(t * invFx, Math.abs(tN - t));
+      // How far x and z move from one cell to the next, across the row and down to the next row:
+      // what a line of constant x (or z) must span to stay at least a cell wide.
+      const dt = tN - t;
+      const rowX = tN * (uX * vyN + fX) - t * baseX, rowZ = tN * (uZ * vyN + fZ) - t * baseZ;
+      const colX = Math.abs(t * rX * invFx), colZ = Math.abs(t * rZ * invFx);
       const iz = 1 / t;
       for (let col = 0; col < cols; col++, o++) {
         if (depth[o] !== 0) continue;
         const vx = (col + 0.5 - cxs) * invFx;
-        groundCell(o, camX + t * (baseX + rX * vx), camZ + t * (baseZ + rZ * vx), t, fp, vx, vy);
+        const sx = rowX + rX * vx * dt, sz = rowZ + rZ * vx * dt;
+        const fpx = Math.max(colX, sx < 0 ? -sx : sx), fpz = Math.max(colZ, sz < 0 ? -sz : sz);
+        groundCell(o, camX + t * (baseX + rX * vx), camZ + t * (baseZ + rZ * vx), t, fp, vx, vy, fpx, fpz);
         depth[o] = iz;
       }
     } else {

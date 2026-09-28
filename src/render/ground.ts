@@ -7,7 +7,7 @@ import {
   HALF, KIND_CITY, KIND_PARK, KIND_PLAZA, LAMP_OFF, LAMP_SPACING, LOT_EDGE, P, ROAD_HALF, blockKind, hasPond, isLandmark,
 } from '../world/layout';
 import type { Camera } from './camera';
-import { lampsOn, put } from './surface';
+import { lampsOn, put, putRaw } from './surface';
 import { SNOW } from './weather';
 
 const G_SPACE = 0;
@@ -23,6 +23,7 @@ const G_TILDE = glyph('~');
 const G_COMMA = glyph(',');
 const G_QUOTE = glyph("'");
 const G_o = glyph('o');
+const G_FULL = glyph('█');
 const GRASS = [glyph(','), glyph("'"), glyph('"'), glyph('.')];
 
 const LAMP_R2 = 8.5 * 8.5;
@@ -72,13 +73,33 @@ let B = 0;
 let BK = 0.2;
 /** Open water, which snow does not settle on. */
 let SEA = false;
+/** Cell footprint in x and in z (metres): the width a line of constant x (or z) needs to cover a cell. */
+let FPX = 0;
+let FPZ = 0;
+
+/** Debug views of the ground: 0 normal, 1 solid cells in their own colour, 2 solid cells coloured by zone. */
+let debugView = 0;
+let ZONE = 0;
+const Z_ROAD = 0, Z_CENTRE = 1, Z_EDGE = 2, Z_STOP = 3, Z_ZEBRA = 4, Z_KERB = 5, Z_WALK = 6, Z_JOINT = 7, Z_LOT = 8;
+const ZONE_COLORS: readonly (readonly [number, number, number])[] = [
+  [40, 40, 46], [255, 200, 0], [255, 255, 255], [255, 0, 255], [0, 200, 255], [255, 40, 40], [110, 110, 150], [0, 255, 120], [60, 120, 60],
+];
+
+/** `flat` shows each ground cell as a solid block of its colour, `zones` as a solid block per kind of surface. */
+export function setGroundDebug(view: 'flat' | 'zones' | null): void {
+  debugView = view === 'flat' ? 1 : view === 'zones' ? 2 : 0;
+}
 
 /**
- * `fp` is the ground footprint of one cell in metres; details thinner than that are dropped or widened.
+ * `fp` is the ground footprint of one cell in metres, for textures; `fpx`, `fpz` are its extent in x and z,
+ * for lines, which must be widened to stay a cell wide but no more, or they swell with distance.
  * `vx`, `vy` are the cell's view ray offsets from the camera axis (right and up, per unit forward).
  */
-export function groundCell(o: number, X: number, Z: number, t: number, fp: number, vx: number, vy: number): void {
+export function groundCell(
+  o: number, X: number, Z: number, t: number, fp: number, vx: number, vy: number, fpx: number, fpz: number,
+): void {
   cellVx = vx; cellVy = vy;
+  FPX = fpx; FPZ = fpz;
   const bi = Math.floor(X / P), bj = Math.floor(Z / P);
   const lx = X - bi * P, lz = Z - bj * P;
   const sx = lx < HALF ? lx : lx - P;
@@ -88,9 +109,21 @@ export function groundCell(o: number, X: number, Z: number, t: number, fp: numbe
   BK = 0.2;
   SEA = false;
   const onX = ax < ROAD_HALF, onZ = az < ROAD_HALF;
-  if (onX || onZ) road(hood, X, Z, onX, onZ, ax, az, sx, sz, lx, lz, fp);
-  else if (ax < LOT_EDGE || az < LOT_EDGE) sidewalk(hood, X, Z, ax, az, fp);
-  else lot(hood, bi, bj, X, Z, lx - HALF, lz - HALF, fp);
+  if (onX || onZ) {
+    ZONE = Z_ROAD;
+    road(hood, X, Z, onX, onZ, ax, az, sx, sz, lx, lz, fp);
+  } else if (ax < LOT_EDGE || az < LOT_EDGE) {
+    ZONE = Z_WALK;
+    sidewalk(hood, X, Z, ax, az, fp);
+  } else {
+    ZONE = Z_LOT;
+    lot(hood, bi, bj, X, Z, lx - HALF, lz - HALF, fp);
+  }
+  if (debugView === 2) {
+    const c = ZONE_COLORS[ZONE];
+    putRaw(o, G_FULL, c[0], c[1], c[2], c[0], c[1], c[2]);
+    return;
+  }
   if (snow && !SEA) {
     // Roads are churned to grey slush with darker tyre tracks; everything else lies under snow.
     let k = 0.85;
@@ -111,7 +144,8 @@ export function groundCell(o: number, X: number, Z: number, t: number, fp: numbe
   if (rain && fp < 0.6 && (hash3(Math.floor(X * 1.5), Math.floor(Z * 1.5), tick) & 255) === 0) {
     GL = G_QUOTE; R = 150; G = 170; B = 200;
   }
-  put(o, GL, R, G, B, BK, t, 0);
+  if (debugView === 1) put(o, G_FULL, R, G, B, 1, t, 0);
+  else put(o, GL, R, G, B, BK, t, 0);
 }
 
 /**
@@ -121,6 +155,11 @@ export function groundCell(o: number, X: number, Z: number, t: number, fp: numbe
  */
 function joint(u: number, w: number, f: number): boolean {
   return u - Math.floor(u) < (w > f ? w : f);
+}
+
+/** Width `w` of a painted line, or the cell footprint across it when that is larger. */
+function wide(w: number, f: number): number {
+  return w > f ? w : f;
 }
 
 function alongDist(a: number): number {
@@ -166,14 +205,13 @@ function road(
     else { R = 50; G = 54; B = 62; }
     if (hood === H_DOCKS && fp < 0.3) {
       const jx = X / 4 - Math.floor(X / 4), jz = Z / 4 - Math.floor(Z / 4);
-      const jw = fp / 4 + 0.02;
-      GL = jx < jw ? lineGlyph(true) : jz < jw ? lineGlyph(false)
+      GL = jx < FPX / 4 + 0.02 ? lineGlyph(true) : jz < FPZ / 4 + 0.02 ? lineGlyph(false)
         : (hash2(Math.floor(X * 2), Math.floor(Z * 2)) & 15) === 0 ? G_DOT : G_SPACE;
     } else if (fp < 0.3) {
       const h = hash2(Math.floor(X * 3), Math.floor(Z * 3)) & 7;
       GL = h < 2 ? G_COLON : h < 5 ? G_DOT : G_SPACE;
     } else GL = fp < 1.4 ? G_COLON : G_DASH;
-    if (onX !== onZ) markings(hood, onX, ax, az, sx, sz, lx, lz, fp);
+    if (onX !== onZ) markings(hood, onX, ax, az, sx, sz, lx, lz);
   }
   if (rain && fp < 2.5 && valueNoise(X * 0.18, Z * 0.18, 5) > 0.66) {
     R = 38; G = 58; B = 92; BK = 0.35;
@@ -182,40 +220,44 @@ function road(
 }
 
 function markings(
-  hood: number, onX: boolean, ax: number, az: number, sx: number, sz: number, lx: number, lz: number, fp: number,
+  hood: number, onX: boolean, ax: number, az: number, sx: number, sz: number, lx: number, lz: number,
 ): void {
   const a = onX ? ax : az;
   const s = onX ? sx : sz;
   const along = onX ? lz : lx;
   const cross = onX ? az : ax;
+  // Footprints across the road (for lines along it) and along the road (for lines across it).
+  const fl = onX ? FPX : FPZ, fa = onX ? FPZ : FPX;
   // Stop line across the approach lane only (right-hand traffic arrives on the right of the centre line).
   const toward = onX ? sz : sx;
   const approach = onX ? s * toward < 0 : s * toward > 0;
-  const sw = fp * 0.5 > 0.25 ? fp * 0.5 : 0.25;
-  if (approach && Math.abs(cross - 10.05) < sw) {
-    GL = G_EQ; R = 200; G = 200; B = 196; BK = 0.3;
+  if (approach && Math.abs(cross - 10.05) < wide(0.25, fa * 0.5)) {
+    GL = G_EQ; R = 200; G = 200; B = 196; BK = 0.3; ZONE = Z_STOP;
     return;
   }
   if (hood !== H_DOCKS && cross < ROAD_HALF + 3.6) {
-    if (fp < 0.4) {
+    if (fl < 0.4) {
       if ((Math.floor((s + ROAD_HALF) / 0.9) & 1) === 0) {
-        GL = G_EQ; R = 175; G = 175; B = 172; BK = 0.3;
+        GL = G_EQ; R = 175; G = 175; B = 172; BK = 0.3; ZONE = Z_ZEBRA;
       }
     } else {
-      GL = G_EQ; R = 115; G = 115; B = 115;
+      GL = G_EQ; R = 115; G = 115; B = 115; ZONE = Z_ZEBRA;
     }
     return;
   }
   // Residential streets have no lane lines, only the stop lines and crossings above.
   if (hood === H_SUBURB || hood === H_ESTATES) return;
-  const w = fp * 0.45 > 0.12 ? fp * 0.45 : 0.12;
-  if (hood !== H_JAPAN && a < w && (hood === H_DOCKS || fp > 1.2 || (Math.floor(along / 3) & 1) === 0)) {
-    GL = lineGlyph(onX); BK = 0.3;
-    const k = hood !== H_DOCKS && fp > 1.2 ? 0.6 : 1;
+  const w = wide(0.12, fl * 0.5);
+  const dashes = hood !== H_DOCKS && fa <= 1.2;
+  if (hood !== H_JAPAN && a < w && (!dashes || (Math.floor(along / 3) & 1) === 0)) {
+    GL = lineGlyph(onX); BK = 0.3; ZONE = Z_CENTRE;
+    const k = hood !== H_DOCKS && !dashes ? 0.6 : 1;
     if (hood === H_PARIS) { R = 210 * k; G = 210 * k; B = 205 * k; }
     else { R = 210 * k; G = 170 * k; B = 60 * k; }
-  } else if (Math.abs(a - (ROAD_HALF - 0.4)) < w) {
-    GL = lineGlyph(onX); R = 150; G = 150; B = 150; BK = 0.25;
+  } else if (fl < 0.28 && Math.abs(a - (ROAD_HALF - 0.4)) < w) {
+    // The edge line stops where the strip of road between it and the kerb is under a cell wide, or the two
+    // lines would keep merging and splitting apart down the street.
+    GL = lineGlyph(onX); R = 150; G = 150; B = 150; BK = 0.25; ZONE = Z_EDGE;
   }
 }
 
@@ -248,9 +290,9 @@ function sidewalk(hood: number, X: number, Z: number, ax: number, az: number, fp
     case H_MEDINA: R = 172; G = 142; B = 104; tile = 0.8; break;
     default: R = 118; G = 118; B = 122; tile = 2;
   }
-  const kerb = ROAD_HALF + (fp > 0.3 ? fp : 0.3);
-  if (ax < kerb || az < kerb) {
+  if (ax < ROAD_HALF + wide(0.3, FPX) || az < ROAD_HALF + wide(0.3, FPZ)) {
     GL = G_EQ;
+    ZONE = Z_KERB;
     if (hood === H_DOCKS) {
       if (fp > 0.3) { R = 125; G = 105; B = 42; return; }
       const yellow = (Math.floor((X + Z) / 0.7) & 1) === 0;
@@ -267,13 +309,17 @@ function sidewalk(hood: number, X: number, Z: number, ax: number, az: number, fp
     return;
   }
   if (hood === H_SEAFRONT) return promenade(X, Z, az < ax, fp);
-  const inv = 1 / tile, f = fp * inv;
-  if (f < 0.16) {
+  // Each family of joints fades on its own, once its lines would be only a few cells apart.
+  const inv = 1 / tile, fu = FPX * inv, fv = FPZ * inv;
+  const stagger = hood === H_OLDTOWN || hood === H_MEDINA;
+  const du = fu < 0.16 && (!stagger || fv < 0.16), dv = fv < 0.16;
+  if (du || dv) {
     const c = Z * inv;
-    const a = X * inv + (hood === H_OLDTOWN || hood === H_MEDINA ? (Math.floor(c) & 1) * 0.5 : 0);
+    const a = X * inv + (stagger ? (Math.floor(c) & 1) * 0.5 : 0);
     const w = 0.05 * inv;
-    const eu = joint(a, w, f), ev = joint(c, w, f);
+    const eu = du && joint(a, w, fu), ev = dv && joint(c, w, fv);
     GL = eu && ev ? G_PLUS : eu ? lineGlyph(true) : ev ? lineGlyph(false) : G_DOT;
+    if (eu || ev) ZONE = Z_JOINT;
   } else GL = G_COLON;
 }
 
@@ -295,7 +341,7 @@ function lot(hood: number, bi: number, bj: number, X: number, Z: number, dx: num
     }
   }
   if (hood === H_MEDINA && kind === KIND_PLAZA) return cobbles(X, Z, fp, 176, 146, 106);
-  if (hood === H_DOCKS) return yard(X, Z, fp);
+  if (hood === H_DOCKS) return yard(X, Z);
   const pond = kind === KIND_PARK && (hood === H_DOWNTOWN || hood === H_JAPAN) && hasPond(bi, bj);
   if (pond && dx * dx + dz * dz < 81) {
     R = 30; G = 62; B = 120; BK = 0.4;
@@ -415,10 +461,9 @@ function raked(Z: number, fp: number): void {
 }
 
 /** Container yard concrete with a yellow painted bay grid. */
-function yard(X: number, Z: number, fp: number): void {
+function yard(X: number, Z: number): void {
   R = 78; G = 78; B = 76; BK = 0.3;
-  const w = fp / 6.4 + 0.015;
-  const gx = X / 6.4 - Math.floor(X / 6.4) < w, gz = Z / 6.4 - Math.floor(Z / 6.4) < w;
+  const gx = X / 6.4 - Math.floor(X / 6.4) < FPX / 6.4 + 0.015, gz = Z / 6.4 - Math.floor(Z / 6.4) < FPZ / 6.4 + 0.015;
   if (gx || gz) {
     GL = gx && gz ? G_PLUS : gx ? lineGlyph(true) : lineGlyph(false);
     R = 190; G = 160; B = 50;
