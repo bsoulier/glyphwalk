@@ -70,7 +70,6 @@ export class Sound {
   private noise!: AudioBuffer;
   private sizzle!: AudioBuffer;
   private city!: GainNode;
-  private rainBed!: GainNode;
   private wind!: GainNode;
   private murmur!: GainNode;
   private fry!: GainNode;
@@ -178,7 +177,6 @@ export class Sound {
     for (let k = 0; k < s.length; k++) s[k] = (Math.random() * 2 - 1) * (Math.random() < 0.002 ? 1 : 0.12);
 
     this.city = this.bed('lowpass', 420, 0.7, this.outside('ambience'));
-    this.rainBed = this.bed('highpass', 900, 0.5, this.outside('ambience'));
     this.wind = this.bed('bandpass', 380, 0.5, this.outside('ambience'));
     this.rumble = this.bed('lowpass', 160, 0.7, this.inside('traffic'));
     this.hum = this.bed('lowpass', 200, 0.7, this.inside('ambience'));
@@ -399,7 +397,7 @@ export class Sound {
 
     // Snow hushes the city; the only sound left is a soft wind.
     this.level(this.city, (s.hood === H_DOWNTOWN ? 0.35 : 0.22) * (s.cam.y > 60 ? 0.5 : 1) * (snow ? 0.5 : 1));
-    this.level(this.rainBed, s.weather === 'rain' ? 0.07 : 0, 0.8);
+    if (s.weather === 'rain') this.drops();
     this.level(this.wind, snow ? 0.12 : 0, 1.5);
     this.traffic(s);
     this.lift(s);
@@ -411,6 +409,23 @@ export class Sound {
     if (s.crossing && this.t >= this.nextChirp) {
       this.nextChirp = this.t + 0.55;
       this.tone(2900, 0.06, 0.05, this.outside('ambience'), { to: 3700 });
+    }
+  }
+
+  /**
+   * Rain as single drops every couple of seconds, not a hiss: each is a tiny sine whose pitch jumps up,
+   * the "plip" of a drop landing in a puddle, sometimes followed by a second, quieter one nearby.
+   */
+  private drops(): void {
+    if (!this.every('drop', 0.9, 2.6)) return;
+    const o = this.outside('ambience');
+    const n = Math.random() < 0.35 ? 2 : 1;
+    const pan = Math.random() * 1.6 - 0.8;
+    for (let k = 0; k < n; k++) {
+      const f = 900 + Math.random() * 1500;
+      this.tone(f, 0.05 + Math.random() * 0.04, k === 0 ? 0.05 : 0.03, o, {
+        to: f * (1.5 + Math.random() * 0.5), delay: k * (0.12 + Math.random() * 0.2), pan: pan + (Math.random() - 0.5) * 0.4, attack: 0.002,
+      });
     }
   }
 
