@@ -40,6 +40,7 @@ export class Zone extends DurableObject<Env> {
   private readonly peers = new Map<WebSocket, Peer>();
   private tickTimer: ReturnType<typeof setTimeout> | null = null;
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastTick = 0;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -109,14 +110,24 @@ export class Zone extends DurableObject<Env> {
     this.schedule();
   }
 
+  /** Ticks right away when the last tick is long enough ago, else when it will be: at most one per TICK_MS. */
   private schedule(): void {
     if (this.tickTimer !== null || !this.core?.dirty) return;
-    this.tickTimer = setTimeout(() => {
-      this.tickTimer = null;
-      this.core?.tick();
-      if (this.saveTimer !== null) clearTimeout(this.saveTimer);
-      this.saveTimer = setTimeout(() => this.save(), IDLE_SAVE_MS);
-    }, TICK_MS);
+    const wait = this.lastTick + TICK_MS - Date.now();
+    if (wait <= 0) this.tick();
+    else {
+      this.tickTimer = setTimeout(() => {
+        this.tickTimer = null;
+        this.tick();
+      }, wait);
+    }
+  }
+
+  private tick(): void {
+    this.lastTick = Date.now();
+    this.core?.tick();
+    if (this.saveTimer !== null) clearTimeout(this.saveTimer);
+    this.saveTimer = setTimeout(() => this.save(), IDLE_SAVE_MS);
   }
 
   /** Saves the positions that changed, once things are quiet, so a woken room knows where everyone is. */
