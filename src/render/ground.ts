@@ -4,6 +4,7 @@ import { HOODS, H_DOCKS, H_DOWNTOWN, H_JAPAN, H_OLDTOWN, H_PARIS, hoodAt } from 
 import {
   HALF, KIND_CITY, KIND_PARK, KIND_PLAZA, LAMP_OFF, LAMP_SPACING, LOT_EDGE, P, ROAD_HALF, blockKind, hasPond,
 } from '../world/layout';
+import type { Camera } from './camera';
 import { lampsOn, put } from './surface';
 import { SNOW } from './weather';
 
@@ -12,6 +13,8 @@ const G_DOT = glyph('.');
 const G_COLON = glyph(':');
 const G_DASH = glyph('-');
 const G_PIPE = glyph('|');
+const G_SLASH = glyph('/');
+const G_BSLASH = glyph('\\');
 const G_EQ = glyph('=');
 const G_PLUS = glyph('+');
 const G_TILDE = glyph('~');
@@ -25,16 +28,38 @@ const LAMP_R2 = 8.5 * 8.5;
 let time = 0;
 let tick = 0;
 let rain = false;
-let nsVertical = false;
-
 let snow = false;
 
-export function beginGround(t: number, raining: boolean, lookingAlongZ: boolean, snowing: boolean): void {
+// Ground-plane parts of the camera basis (right, up, forward) and the current cell's view ray offsets, so lines
+// on the ground can pick a glyph that follows their slope on screen.
+let camFx = 1, camFy = 1;
+let rXw = 1, rZw = 0, uXw = 0, uZw = 0, fXw = 0, fZw = 1;
+let cellVx = 0, cellVy = 0;
+
+export function beginGround(t: number, raining: boolean, snowing: boolean, cam: Camera): void {
   time = t;
   tick = Math.floor(t * 10);
   rain = raining;
-  nsVertical = lookingAlongZ;
   snow = snowing;
+  camFx = cam.fx; camFy = cam.fy;
+  rXw = cam.cY; rZw = -cam.sY;
+  uXw = -cam.sY * cam.sP; uZw = -cam.cY * cam.sP;
+  fXw = cam.sY * cam.cP; fZw = cam.cY * cam.cP;
+}
+
+/**
+ * Glyph for a line on the ground running along world Z (or X), chosen by the line's slope in cells at the
+ * current cell: a joint that crosses the screen horizontally must be drawn with `-`, one that recedes with `|`,
+ * and anything in between with a slash, or the line breaks into staircases of the wrong stroke.
+ */
+function lineGlyph(alongZ: boolean): number {
+  const wr = alongZ ? rZw : rXw, wu = alongZ ? uZw : uXw, wf = alongZ ? fZw : fXw;
+  const dc = camFx * (wr - cellVx * wf);
+  const dr = camFy * (cellVy * wf - wu);
+  const ac = dc < 0 ? -dc : dc, ar = dr < 0 ? -dr : dr;
+  if (ar > ac * 2) return G_PIPE;
+  if (ac > ar * 2) return G_DASH;
+  return (dc > 0) === (dr > 0) ? G_BSLASH : G_SLASH;
 }
 
 // Output of the per-neighbourhood painters, kept in module scope so nothing is allocated per cell.
@@ -44,8 +69,12 @@ let G = 0;
 let B = 0;
 let BK = 0.2;
 
-/** `fp` is the ground footprint of one cell in metres; details thinner than that are dropped or widened. */
-export function groundCell(o: number, X: number, Z: number, t: number, fp: number): void {
+/**
+ * `fp` is the ground footprint of one cell in metres; details thinner than that are dropped or widened.
+ * `vx`, `vy` are the cell's view ray offsets from the camera axis (right and up, per unit forward).
+ */
+export function groundCell(o: number, X: number, Z: number, t: number, fp: number, vx: number, vy: number): void {
+  cellVx = vx; cellVy = vy;
   const bi = Math.floor(X / P), bj = Math.floor(Z / P);
   const lx = X - bi * P, lz = Z - bj * P;
   const sx = lx < HALF ? lx : lx - P;
@@ -78,6 +107,15 @@ export function groundCell(o: number, X: number, Z: number, t: number, fp: numbe
     GL = G_QUOTE; R = 150; G = 170; B = 200;
   }
   put(o, GL, R, G, B, BK, t, 0);
+}
+
+/**
+ * Joint lines of width `w` repeating every 1 unit, seen with a cell footprint of `f` units. A joint is never
+ * drawn thinner than a cell, which is what breaks thin lines into moire; callers stop drawing joints once they
+ * would be only a few cells apart.
+ */
+function joint(u: number, w: number, f: number): boolean {
+  return u - Math.floor(u) < (w > f ? w : f);
 }
 
 function alongDist(a: number): number {
@@ -121,7 +159,8 @@ function road(
     if (hood === H_DOCKS && fp < 0.3) {
       const jx = X / 4 - Math.floor(X / 4), jz = Z / 4 - Math.floor(Z / 4);
       const jw = fp / 4 + 0.02;
-      GL = jx < jw ? G_PIPE : jz < jw ? G_DASH : (hash2(Math.floor(X * 2), Math.floor(Z * 2)) & 15) === 0 ? G_DOT : G_SPACE;
+      GL = jx < jw ? lineGlyph(true) : jz < jw ? lineGlyph(false)
+        : (hash2(Math.floor(X * 2), Math.floor(Z * 2)) & 15) === 0 ? G_DOT : G_SPACE;
     } else if (fp < 0.3) {
       const h = hash2(Math.floor(X * 3), Math.floor(Z * 3)) & 7;
       GL = h < 2 ? G_COLON : h < 5 ? G_DOT : G_SPACE;
@@ -150,7 +189,7 @@ function markings(
     return;
   }
   if (hood !== H_DOCKS && cross < ROAD_HALF + 3.6) {
-    if (fp < 0.9) {
+    if (fp < 0.4) {
       if ((Math.floor((s + ROAD_HALF) / 0.9) & 1) === 0) {
         GL = G_EQ; R = 175; G = 175; B = 172; BK = 0.3;
       }
@@ -160,13 +199,13 @@ function markings(
     return;
   }
   const w = fp * 0.45 > 0.12 ? fp * 0.45 : 0.12;
-  const gl = onX === nsVertical ? G_PIPE : G_DASH;
-  if (hood !== H_JAPAN && a < w && (hood === H_DOCKS || (Math.floor(along / 3) & 1) === 0)) {
-    GL = gl; BK = 0.3;
-    if (hood === H_PARIS) { R = 210; G = 210; B = 205; }
-    else { R = 210; G = 170; B = 60; }
+  if (hood !== H_JAPAN && a < w && (hood === H_DOCKS || fp > 1.2 || (Math.floor(along / 3) & 1) === 0)) {
+    GL = lineGlyph(onX); BK = 0.3;
+    const k = hood !== H_DOCKS && fp > 1.2 ? 0.6 : 1;
+    if (hood === H_PARIS) { R = 210 * k; G = 210 * k; B = 205 * k; }
+    else { R = 210 * k; G = 170 * k; B = 60 * k; }
   } else if (Math.abs(a - (ROAD_HALF - 0.4)) < w) {
-    GL = gl; R = 150; G = 150; B = 150; BK = 0.25;
+    GL = lineGlyph(onX); R = 150; G = 150; B = 150; BK = 0.25;
   }
 }
 
@@ -196,9 +235,11 @@ function sidewalk(hood: number, X: number, Z: number, ax: number, az: number, fp
     case H_DOCKS: R = 88; G = 88; B = 86; tile = 3; break;
     default: R = 118; G = 118; B = 122; tile = 2;
   }
-  if (ax < ROAD_HALF + 0.3 || az < ROAD_HALF + 0.3) {
+  const kerb = ROAD_HALF + (fp > 0.3 ? fp : 0.3);
+  if (ax < kerb || az < kerb) {
     GL = G_EQ;
     if (hood === H_DOCKS) {
+      if (fp > 0.3) { R = 125; G = 105; B = 42; return; }
       const yellow = (Math.floor((X + Z) / 0.7) & 1) === 0;
       R = yellow ? 210 : 40; G = yellow ? 170 : 40; B = yellow ? 40 : 44;
     } else {
@@ -206,12 +247,13 @@ function sidewalk(hood: number, X: number, Z: number, ax: number, az: number, fp
     }
     return;
   }
-  if (fp < tile * 0.2) {
-    const inv = 1 / tile;
+  const inv = 1 / tile, f = fp * inv;
+  if (f < 0.16) {
     const c = Z * inv;
     const a = X * inv + (hood === H_OLDTOWN ? (Math.floor(c) & 1) * 0.5 : 0);
-    const eu = a - Math.floor(a) < 0.1, ev = c - Math.floor(c) < 0.1;
-    GL = eu && ev ? G_PLUS : eu ? G_PIPE : ev ? G_DASH : G_DOT;
+    const w = 0.05 * inv;
+    const eu = joint(a, w, f), ev = joint(c, w, f);
+    GL = eu && ev ? G_PLUS : eu ? lineGlyph(true) : ev ? lineGlyph(false) : G_DOT;
   } else GL = G_COLON;
 }
 
@@ -224,7 +266,7 @@ function lot(hood: number, bi: number, bj: number, X: number, Z: number, dx: num
       case H_JAPAN: gravel(X, Z, 118, 116, 108); return;
       case H_PARIS: gravel(X, Z, 130, 120, 100); return;
       case H_DOCKS: GL = G_DOT; R = 70; G = 70; B = 68; return;
-      default: checker(X, Z); return;
+      default: checker(X, Z, fp); return;
     }
   }
   if (hood === H_DOCKS) return yard(X, Z, fp);
@@ -249,7 +291,7 @@ function lot(hood: number, bi: number, bj: number, X: number, Z: number, dx: num
       else gravel(X, Z, 152, 140, 112);
       return;
     default:
-      if (kind === KIND_PLAZA) checker(X, Z);
+      if (kind === KIND_PLAZA) checker(X, Z, fp);
       else if (adx < 1.6 || adz < 1.6) { GL = G_DOT; R = 120; G = 108; B = 84; }
       else grass(X, Z, fp);
   }
@@ -268,7 +310,11 @@ function gravel(X: number, Z: number, r: number, g: number, b: number): void {
   R = r; G = g; B = b; BK = 0.3;
 }
 
-function checker(X: number, Z: number): void {
+function checker(X: number, Z: number, fp: number): void {
+  if (fp > 0.8) {
+    GL = G_COLON; R = 94; G = 87; B = 105;
+    return;
+  }
   const chk = (Math.floor(X * 0.5) + Math.floor(Z * 0.5)) & 1;
   GL = chk ? G_PLUS : G_DOT;
   R = chk ? 104 : 84; G = chk ? 96 : 78; B = chk ? 116 : 94;
@@ -277,7 +323,7 @@ function checker(X: number, Z: number): void {
 /** Raked gravel of a zen garden: parallel furrows, merged to a flat tone once they are sub-cell. */
 function raked(Z: number, fp: number): void {
   R = 168; G = 165; B = 152; BK = 0.35;
-  if (fp < 0.25) {
+  if (fp < 0.15) {
     const f = Z / 0.35 - Math.floor(Z / 0.35);
     GL = f < 0.5 ? G_TILDE : G_SPACE;
   } else GL = G_DASH;
@@ -289,7 +335,7 @@ function yard(X: number, Z: number, fp: number): void {
   const w = fp / 6.4 + 0.015;
   const gx = X / 6.4 - Math.floor(X / 6.4) < w, gz = Z / 6.4 - Math.floor(Z / 6.4) < w;
   if (gx || gz) {
-    GL = gx && gz ? G_PLUS : gx ? G_PIPE : G_DASH;
+    GL = gx && gz ? G_PLUS : gx ? lineGlyph(true) : lineGlyph(false);
     R = 190; G = 160; B = 50;
   } else GL = (hash2(Math.floor(X * 2), Math.floor(Z * 2)) & 15) === 0 ? G_COLON : G_DOT;
 }

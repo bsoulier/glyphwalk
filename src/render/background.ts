@@ -51,7 +51,7 @@ export function drawBackground(fb: FrameBuffer, cam: Camera, env: SkyEnv): void 
   D = env.sky;
   starScaleX = cam.fx;
   starScaleY = cam.fy;
-  beginGround(env.time, env.weather === 'rain', Math.abs(cam.cY) > Math.SQRT1_2, env.weather === 'snow');
+  beginGround(env.time, env.weather === 'rain', env.weather === 'snow', cam);
 
   const { fx, fy, cY, sY, cP, sP, far } = cam;
   const cxs = cam.cx, cys = cam.cy;
@@ -77,7 +77,7 @@ export function drawBackground(fb: FrameBuffer, cam: Camera, env: SkyEnv): void 
       for (let col = 0; col < cols; col++, o++) {
         if (depth[o] !== 0) continue;
         const vx = (col + 0.5 - cxs) * invFx;
-        groundCell(o, camX + t * (baseX + rX * vx), camZ + t * (baseZ + rZ * vx), t, fp);
+        groundCell(o, camX + t * (baseX + rX * vx), camZ + t * (baseZ + rZ * vx), t, fp, vx, vy);
         depth[o] = iz;
       }
     } else {
