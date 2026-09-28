@@ -1,4 +1,4 @@
-import type { Camera } from './camera';
+import { Camera } from './camera';
 import type { FrameBuffer } from './framebuffer';
 import type { Rain } from './rain';
 import type { World } from '../world/world';
@@ -8,10 +8,12 @@ import { LIGHT_BLINK, LIGHT_FAR, LIGHT_LANTERN } from '../world/build';
 import { LIGHT_STRIDE, POLE_STRIDE } from '../world/city';
 import { FACE_STRIDE } from '../world/faces';
 import { type Interior, drawInterior } from '../world/interior';
+import { type Cab, drawCabin } from '../world/cabin';
+import { isLandmark } from '../world/layout';
 import { drawBackground } from './background';
 import type { Daylight } from './daylight';
 import { beginMaterials } from './materials';
-import { beginRaster, drawFace, drawPoint, drawVLine, setSnowCover, setSunLight, stats } from './raster';
+import { beginRaster, drawFace, drawPoint, drawVLine, setSnowCover, setSunLight, sphereVisible, stats } from './raster';
 import { setFogDensity, setLighting } from './surface';
 import { FOG_DENSITY, type Weather } from './weather';
 import { glyph } from '../core/charset';
@@ -22,6 +24,8 @@ export interface FrameEnv {
   flash: number;
   propDist: number;
   hidden: Vehicle | null;
+  /** The taxi the camera rides in the back of; its cabin is drawn instead of its body. */
+  cab: Cab | null;
   /** How far the doors of the lift the camera rides in are closed, 0 to 1. */
   liftDoors: number;
   sky: Daylight;
@@ -55,11 +59,45 @@ export function renderScene(fb: FrameBuffer, cam: Camera, world: World, env: Fra
     const it = drawBlock(b, cam, env);
     if (it) indoors = it;
   }
+  if (env.weather !== 'fog') drawLandmark(fb, cam, world, env, blocks);
   world.drawActors(cam, env.time, env.weather === 'rain', env.hidden);
+  if (env.cab) {
+    setSnowCover(0);
+    drawCabin(env.cab, cam, env.time);
+    setSnowCover(snowCover);
+  }
   drawBackground(fb, cam, { ...env, glow: world.fireworks.glow });
   world.fireworks.draw(fb, cam, env.weather === 'fog' ? FOG_DENSITY : 0);
-  // Indoors, only drops beyond the far wall can be outside; nearer ones would fall in the room.
-  if (rain.on) rain.draw(fb, indoors ? farCorner(indoors, cam) : 0);
+  // Indoors, only drops beyond the far wall can be outside; nearer ones would fall in the room (or the cab).
+  if (rain.on) rain.draw(fb, indoors ? farCorner(indoors, cam) : env.cab ? CAB_REACH : 0);
+}
+
+/** From the back seat, anything nearer than this is inside the car. */
+const CAB_REACH = 1.6;
+
+/** How far away the Glyph Tower still shows over the city, as a hazy silhouette with its beacons. */
+const LANDMARK_RANGE = 2600;
+const farCam = new Camera();
+
+/**
+ * Past the draw distance the Glyph Tower is drawn on its own, with a far plane and fog set from its
+ * own distance, so it stays on the skyline to steer by. Nearer blocks already drawn hide its foot.
+ */
+function drawLandmark(fb: FrameBuffer, cam: Camera, world: World, env: FrameEnv, blocks: readonly Block[]): void {
+  const b = world.city.landmark();
+  if (blocks.includes(b)) return;
+  const d = Math.hypot(b.cx - cam.x, b.cz - cam.z);
+  if (d > LANDMARK_RANGE) return;
+  Object.assign(farCam, cam);
+  farCam.far = d * 1.3 + 80;
+  beginRaster(fb, farCam);
+  beginMaterials(fb.fg, fb.bg, cam.fx, cam.fy, farCam.far, env.time, env.sky.horizon);
+  if (sphereVisible(b.cx, b.cy, b.cz, b.radius)) {
+    b.dist = d;
+    drawBlock(b, farCam, env);
+  }
+  beginRaster(fb, cam);
+  beginMaterials(fb.fg, fb.bg, cam.fx, cam.fy, cam.far, env.time, env.sky.horizon);
 }
 
 function farCorner(r: Interior, cam: Camera): number {
@@ -79,7 +117,9 @@ function drawBlock(b: Block, cam: Camera, env: FrameEnv): Interior | null {
     for (const it of b.interiors) if (drawInterior(it, cam, env.liftDoors, env.time)) indoors = it;
     setSnowCover(snowCover);
   }
-  const near = b.dist < env.propDist;
+  // The Glyph Tower's spire and ring lights must show from anywhere it can be seen.
+  const landmark = isLandmark(b.i, b.j);
+  const near = landmark || b.dist < env.propDist;
   if (near) {
     const p = b.props;
     for (let o = 0; o < p.length; o += FACE_STRIDE) drawFace(p, o);
@@ -89,7 +129,7 @@ function drawBlock(b: Block, cam: Camera, env: FrameEnv): Interior | null {
     }
   }
   const L = b.lights;
-  const lanterns = b.dist < env.propDist * 1.3;
+  const lanterns = near || b.dist < env.propDist * 1.3;
   for (let o = 0; o < L.length; o += LIGHT_STRIDE) {
     switch (L[o + 6]) {
       case LIGHT_BLINK:

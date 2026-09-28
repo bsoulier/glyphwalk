@@ -18,6 +18,7 @@ import { HOODS, HOOD_BLOCKS, hoodAt, nearestRegion } from './world/hoods';
 import { Sound } from './audio/sound';
 import { RADIO_OFF, STATIONS } from './audio/radio';
 import { inCab, levelAt } from './world/interior';
+import { CAB_FOV } from './world/cabin';
 import { signalPhase, walkWindow } from './world/signals';
 import { EYE_H, P, setWorldSeed, worldSeed } from './world/layout';
 import { brownoutAt } from './world/events';
@@ -399,9 +400,11 @@ function touchContext(): TouchButton[] {
   }
   if (fullMap) return [{ label: 'ZOOM +', code: 'Equal' }, { label: 'ZOOM -', code: 'Minus' }];
   if (player.mode === 'fly') return [{ label: 'RISE', code: 'KeyE', hold: true }, { label: 'SINK', code: 'KeyQ', hold: true }];
+  if (player.mode === 'taxi') return [{ label: 'RADIO', code: 'KeyE' }, { label: 'GET OUT', code: 'Enter' }];
   if (riding()) return [{ label: 'RADIO', code: 'KeyE' }];
   const it = player.inside(world);
   if (it && !player.liftMoving && inCab(it, player.x, player.z)) return [{ label: 'LIFT UP', code: 'KeyE' }, { label: 'LIFT DN', code: 'KeyQ' }];
+  if (player.mode === 'walk' && !it) return [{ label: 'TAXI', code: 'Enter' }];
   return [];
 }
 
@@ -439,7 +442,16 @@ function handleKeys(): void {
       case 'KeyP': togglePhoto(); break;
       case 'KeyO': startTour(); break;
       case 'KeyL': shareView(); break;
-      case 'Enter': if (photo.active) photo.requestPng(); break;
+      case 'Enter':
+        if (photo.active) photo.requestPng();
+        else if (player.mode === 'taxi') {
+          toast(`Paid $${player.fare.toFixed(2)}. Thanks, have a good one!`, 2500);
+          player.setMode('walk', world);
+        } else if (player.mode === 'walk' && !player.inside(world)) {
+          player.setMode('taxi', world);
+          toast(`Taxi! You're in the back: look around with the ${touch ? 'right thumb' : 'mouse'}, ${touch ? 'GET OUT' : 'Enter'} to get out.`, 4000);
+        }
+        break;
       case 'KeyC': if (photo.active) photo.copyText(fb); break;
       case 'Escape':
         fullMap = false;
@@ -562,12 +574,14 @@ function updateHud(): void {
   } else if (riding()) {
     const st = STATIONS[settings.station];
     const radio = st ? `\u266a ${st.name}  ${st.genre}` : '\u266a radio off';
-    osd = `${MODE_LABELS[player.mode]}\n${district} loop\nN: next vehicle in ${district}\n${radio}  (${touch ? 'RADIO' : 'Q / E'} to tune)`;
+    const fare = player.mode === 'taxi' ? `\nFARE $${player.fare.toFixed(2)}  (${touch ? 'GET OUT' : 'Enter'} to get out)` : '';
+    osd = `${MODE_LABELS[player.mode]}\n${district} loop\nN: next ${player.mode === 'taxi' ? 'taxi' : 'vehicle'} in ${district}\n${radio}  (${touch ? 'RADIO' : 'Q / E'} to tune)${fare}`;
   } else if (player.mode === 'rail') {
     osd = `${MODE_LABELS[player.mode]}\n${district} shuttle`;
   } else if (indoors) {
     const lv = levelAt(indoors, player.floorY);
-    const hint = player.liftMoving ? 'LIFT moving...' : inCab(indoors, player.x, player.z) ? 'LIFT  E up / Q down' : indoors.lift ? 'Lift at the back' : '';
+    const hint = player.liftMoving ? `LIFT moving...  ${Math.round(player.floorY)} m`
+      : inCab(indoors, player.x, player.z) ? `LIFT  ${touch ? 'LIFT UP / LIFT DN' : 'E up / Q down'}` : indoors.lift ? 'Lift at the back' : '';
     osd = `${indoors.label}\n${lv ? lv.name : ''}\n${hint}`;
   }
   if (tour.active) osd = `AUTO TOUR - ${touch ? 'touch' : 'press any key'} to take over\n${osd ?? ''}`;
@@ -597,9 +611,13 @@ function soundFrame(dt: number): void {
   });
 }
 
-/** Draw distance after the automatic detail level, and capped in fog where nothing further shows. */
+/**
+ * Draw distance after the automatic detail level, and capped in fog where nothing further shows. High
+ * up (the Glyph Tower's deck, flying) it reaches further, or the city below would fall outside it.
+ */
 function drawDist(): number {
-  const d = Math.round(settings.dist * quality.distScale);
+  const reach = Math.min(900, Math.max(0, cam.y - 30) * 1.6);
+  const d = Math.round((settings.dist + reach) * quality.distScale);
   return settings.weather === 'fog' ? Math.min(d, FOG_FAR) : d;
 }
 
@@ -724,7 +742,7 @@ function frame(now: number): void {
   world.market.setLamps(sky.lamps);
   player.update(dt, input, world, cam);
   cam.far = dist;
-  cam.fovDeg = settings.fov;
+  cam.fovDeg = settings.fov + (player.mode === 'taxi' ? CAB_FOV : 0);
   cam.update(fb.cols, fb.rows, cellPxW, cellPxH);
   rain.update(simDt, cam, fb.cols, fb.rows);
   fireworksFrame(simDt);
@@ -744,12 +762,15 @@ function frame(now: number): void {
 
   const t0 = performance.now();
   setNeon(settings.events, brownoutAt(settings.events, world.time));
+  const ride = player.riding(world);
+  const station = STATIONS[settings.station];
   const env = {
     time,
     weather: settings.weather,
     flash: flicker,
     propDist: Math.min(170, dist * 0.65),
-    hidden: player.mode === 'sky' ? player.riding(world) : null,
+    hidden: ride,
+    cab: ride && player.mode === 'taxi' ? { v: ride, fare: player.fare, radio: station ? station.name : '' } : null,
     liftDoors: player.liftDoors,
     sky,
   };

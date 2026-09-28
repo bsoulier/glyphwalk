@@ -4,7 +4,7 @@ import {
   HOODS, H_DOCKS, H_DOWNTOWN, H_ESTATES, H_JAPAN, H_MEDINA, H_OLDTOWN, H_PARIS, H_SEAFRONT, H_SUBURB, hoodAt, isBeach,
 } from '../world/hoods';
 import {
-  HALF, KIND_CITY, KIND_PARK, KIND_PLAZA, LAMP_OFF, LAMP_SPACING, LOT_EDGE, P, ROAD_HALF, blockKind, hasPond,
+  HALF, KIND_CITY, KIND_PARK, KIND_PLAZA, LAMP_OFF, LAMP_SPACING, LOT_EDGE, P, ROAD_HALF, blockKind, hasPond, isLandmark,
 } from '../world/layout';
 import type { Camera } from './camera';
 import { lampsOn, put } from './surface';
@@ -280,7 +280,7 @@ function sidewalk(hood: number, X: number, Z: number, ax: number, az: number, fp
 /** Courtyards, parks and squares. `dx`, `dz` are offsets from the block centre. */
 function lot(hood: number, bi: number, bj: number, X: number, Z: number, dx: number, dz: number, fp: number): void {
   if (hood === H_SEAFRONT && isBeach(bi, bj)) return beach(X, dz, fp);
-  const kind = blockKind(bi, bj);
+  const kind = isLandmark(bi, bj) ? KIND_PLAZA : blockKind(bi, bj);
   if (kind === KIND_CITY) {
     switch (hood) {
       case H_OLDTOWN: grass(X, Z, fp); return;

@@ -7,7 +7,7 @@ import { BOX_N, BOX_S, BOX_SIDES, BOX_BOTTOM, BOX_TOP, FaceList } from './faces'
 import {
   HOODS, H_DOCKS, H_DOWNTOWN, H_ESTATES, H_JAPAN, H_MEDINA, H_OLDTOWN, H_PARIS, H_SEAFRONT, H_SUBURB, hoodAt,
 } from './hoods';
-import { LOT_EDGE, P, RAIL_Y, blockKind, worldSeed } from './layout';
+import { LANDMARK_I, LANDMARK_J, LOT_EDGE, P, RAIL_Y, blockKind, worldSeed } from './layout';
 import { buildDocks } from './styles/docks';
 import { buildDowntown } from './styles/downtown';
 import { buildJapantown } from './styles/japantown';
@@ -109,6 +109,13 @@ export class City {
       for (const [k, b] of this.cache) if (b.lastUsed < this.frame - 240) this.cache.delete(k);
     }
     return out;
+  }
+
+  /** The Glyph Tower's block, kept in the cache even when it is far outside the draw distance. */
+  landmark(): Block {
+    const b = this.get(LANDMARK_I, LANDMARK_J);
+    b.lastUsed = this.frame;
+    return b;
   }
 
   /** Cached block, without generating it (for overlays that must not stall on unseen areas). */

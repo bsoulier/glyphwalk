@@ -1,7 +1,8 @@
 import type { Camera } from '../render/camera';
 import type { Input } from './input';
 import type { World } from '../world/world';
-import type { Vehicle } from '../world/traffic';
+import { KIND_TAXI, type Vehicle } from '../world/traffic';
+import { SEAT_FWD, SEAT_SIDE, SEAT_UP } from '../world/cabin';
 import { HOOD_BLOCKS, hoodAt } from '../world/hoods';
 import { type Interior, inCab } from '../world/interior';
 import { EYE_H, P, RAIL_TOP } from '../world/layout';
@@ -48,6 +49,8 @@ export class Player {
   private railRj = 0;
   private railDir = 0;
   readonly cctv = { x: 0, y: 8, z: 0, yaw: 0, pitch: -0.25, t: 0, id: 1 };
+  /** Taxi meter, in dollars: the flag drop plus distance and waiting time. */
+  fare = 0;
   onCut: (() => void) | null = null;
 
   riding(world: World): Vehicle | null {
@@ -67,13 +70,25 @@ export class Player {
 
   setMode(mode: Mode, world: World): void {
     if (mode === this.mode) return;
+    // Getting out of a cab puts you on the sidewalk beside the passenger door, facing the way it drove.
+    const cab = this.mode === 'taxi' ? this.riding(world) : null;
+    if (cab && mode === 'walk') {
+      const rX = Math.cos(cab.yaw), rZ = -Math.sin(cab.yaw);
+      this.x = cab.x + rX * 5.2;
+      this.z = cab.z + rZ * 5.2;
+      this.yaw = cab.yaw;
+      this.pitch = 0.02;
+    }
     this.leaveRide(world);
     this.mode = mode;
     this.home = this.hoodHere();
     this.lookYaw = 0;
     this.lookPitch = 0;
     if (mode === 'cctv') this.pickCctv();
-    if (mode === 'taxi') this.target = world.cars.hail(this.x, this.z, this.home);
+    if (mode === 'taxi') {
+      this.target = world.cars.hail(this.x, this.z, this.home, KIND_TAXI);
+      this.fare = 3;
+    }
     if (mode === 'sky') this.target = world.skyCars.hail(this.x, this.z, this.home);
     if (mode === 'rail') {
       this.railRi = Math.floor(this.x / REGION);
@@ -130,7 +145,9 @@ export class Player {
     const n = k + dir;
     if (k < 0 || n < 0 || n >= it.levels.length) return false;
     const to = it.levels[n].y;
-    this.ride = { from: this.floorY, to, t: 0, dur: clamp(Math.abs(to - this.floorY) / 12, 1.6, 5) };
+    const rise = Math.abs(to - this.floorY);
+    // Express lifts in the tallest towers take longer, so the climb is felt, but never tediously.
+    this.ride = { from: this.floorY, to, t: 0, dur: clamp(rise / 12, 1.6, rise > 100 ? 10 : 5) };
     return true;
   }
 
@@ -247,6 +264,11 @@ export class Player {
 
     this.lookYaw += mdx * SENS + turn;
     this.lookPitch = clamp(this.lookPitch - tilt, -1.2, 1.2);
+    // A passenger can only turn their head: over the shoulder, but not all the way round.
+    if (this.mode === 'taxi') {
+      this.lookYaw = clamp(this.lookYaw, -2.4, 2.4);
+      this.lookPitch = clamp(this.lookPitch, -1.0, 0.7);
+    }
 
     if (this.mode === 'cctv') {
       const c = this.cctv;
@@ -275,10 +297,11 @@ export class Player {
       if (!v) return;
       const fX = Math.sin(v.yaw), fZ = Math.cos(v.yaw), rX = fZ, rZ = -fX;
       const taxi = this.mode === 'taxi';
-      const seatFwd = taxi ? 0.25 : 1.7, seatSide = taxi ? 0.38 : 0, seatUp = taxi ? 1.32 : 0.75;
-      cam.x = v.x + fX * seatFwd - rX * seatSide;
+      const seatFwd = taxi ? SEAT_FWD : 1.7, seatSide = taxi ? SEAT_SIDE : 0, seatUp = taxi ? SEAT_UP : 0.75;
+      cam.x = v.x + fX * seatFwd + rX * seatSide;
       cam.y = v.y + seatUp;
-      cam.z = v.z + fZ * seatFwd - rZ * seatSide;
+      cam.z = v.z + fZ * seatFwd + rZ * seatSide;
+      if (taxi) this.fare += v.vel * dt * 0.0028 + (v.vel < 1 ? dt * 0.006 : 0);
       cam.yaw = v.yaw + this.lookYaw;
       cam.pitch = this.lookPitch - (this.mode === 'sky' ? 0.12 : 0);
     }

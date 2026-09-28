@@ -25,6 +25,14 @@ export function setWorldSeed(seed: number): void {
   worldSeed = seed | 0;
 }
 
+/** The Glyph Tower's block, in the city centre next to where a new game starts. */
+export const LANDMARK_I = 1;
+export const LANDMARK_J = 1;
+
+export function isLandmark(i: number, j: number): boolean {
+  return i === LANDMARK_I && j === LANDMARK_J;
+}
+
 export function blockKind(i: number, j: number): number {
   const h = hash3(i, j, worldSeed ^ 0x51f) % 100;
   return h < 8 ? KIND_PARK : h < 12 ? KIND_PLAZA : KIND_CITY;

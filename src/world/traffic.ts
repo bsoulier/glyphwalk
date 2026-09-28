@@ -135,10 +135,17 @@ export class Traffic {
     this.plan(v);
   }
 
-  /** Bring the nearest vehicle to the lane beside (x, z), bound to `hood` until released. */
-  hail(x: number, z: number, hood: number): number {
-    const k = this.nearest(x, z);
+  /**
+   * Bring the nearest vehicle (of `kind`, when given) to the lane beside (x, z), bound to `hood` until
+   * released. If none of that kind exists, the nearest car is repainted as one.
+   */
+  hail(x: number, z: number, hood: number, kind = -1): number {
+    const k = this.nearest(x, z, kind);
     const v = this.list[k];
+    if (kind === KIND_TAXI && v.kind !== KIND_TAXI) {
+      v.kind = KIND_TAXI;
+      v.r = 235; v.g = 190; v.b = 40;
+    }
     v.home = hood;
     const X = Math.round(x / P) * P, Z = Math.round(z / P) * P;
     if (Math.abs(x - X) < Math.abs(z - Z)) this.putOnRoad(v, x, z, x >= X ? 0 : 2);
@@ -150,9 +157,11 @@ export class Traffic {
   /** Next vehicle after `current` that is already inside `hood`, re-bound to it; falls back to `current`. */
   nextIn(current: number, hood: number): number {
     const n = this.list.length;
+    const kind = this.list[current % n]?.kind;
     for (let s = 1; s < n; s++) {
       const k = (current + s) % n;
       const v = this.list[k];
+      if (kind === KIND_TAXI && v.kind !== KIND_TAXI) continue;
       if (hoodAt(Math.floor(v.x / P), Math.floor(v.z / P)) !== hood) continue;
       this.release(current);
       v.home = hood;
@@ -280,9 +289,10 @@ export class Traffic {
     }
   }
 
-  nearest(x: number, z: number): number {
+  nearest(x: number, z: number, kind = -1): number {
     let best = 0, bd = Infinity;
     this.list.forEach((v, k) => {
+      if (kind >= 0 && v.kind !== kind) return;
       const d = (v.x - x) ** 2 + (v.z - z) ** 2;
       if (d < bd) { bd = d; best = k; }
     });

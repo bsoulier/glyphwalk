@@ -1,19 +1,20 @@
 import { F_GENERIC, F_GLASS, FLOOR_H, facadeSeed } from '../../render/facades';
-import { M_CONCRETE, M_ROOF, M_WALL } from '../../render/materials';
+import { M_CONCRETE, M_NEON, M_RAIL, M_ROOF, M_WALL } from '../../render/materials';
 import {
-  type Builder, type Rect, G_PIPE, LIGHT_BLINK, LIGHT_LAMP, TREE_ROUND,
-  jitter, park, pick, sideOf, streetSides, streetTrees, wallSign,
+  type Builder, type Rect, G_PIPE, LIGHT_BLINK, LIGHT_LAMP, LIGHT_LANTERN, TREE_ROUND,
+  fountain, jitter, park, pick, sideOf, streetSides, streetTrees, wallSign,
 } from '../build';
-import { BOX_DEFAULT } from '../faces';
-import { LOBBY, LOUNGE, OFFICE } from '../furniture';
+import { BOX_DEFAULT, BOX_SIDES, BOX_TOP } from '../faces';
+import { LOBBY, LOUNGE, OFFICE, SKYDECK } from '../furniture';
 import { enterable } from '../interior';
-import { KIND_PARK, KIND_PLAZA, P, heightScale } from '../layout';
-import { NEON, SIGNS_DOWNTOWN, TEXT_LOBBY, type RGB } from '../signs';
+import { KIND_PARK, KIND_PLAZA, P, heightScale, isLandmark } from '../layout';
+import { NEON, SIGNS_DOWNTOWN, TEXT_LOBBY, TEXT_SKYDECK, TEXT_TOWER, type RGB } from '../signs';
 
 const GLASS: readonly RGB[] = [[70, 92, 130], [60, 80, 112], [92, 112, 146], [52, 72, 94], [112, 122, 138], [60, 100, 110]];
 const CONCRETE: readonly RGB[] = [[102, 102, 108], [122, 118, 112], [86, 86, 96], [112, 80, 132]];
 
 export function buildDowntown(B: Builder, i: number, j: number, kind: number, lot: Rect): void {
+  if (isLandmark(i, j)) return glyphTower(B, lot);
   if (kind === KIND_PARK) return park(B, i, j, lot, TREE_ROUND, true);
   if (kind === KIND_PLAZA) return plaza(B, lot);
   const { rng } = B;
@@ -88,6 +89,69 @@ function tower(B: Builder, r: Rect, lot: Rect, scale: number, lobby: boolean): b
   if (rng() < 0.5) wallSign(B, sideOf(r, pick(rng, sides)), SIGNS_DOWNTOWN, NEON, 4 + rng() * 2.5, 1);
   if (baseH > 30 && rng() < 0.4) wallSign(B, sideOf(r, pick(rng, sides)), SIGNS_DOWNTOWN, NEON, baseH * (0.45 + rng() * 0.25), 3);
   return entered;
+}
+
+/** Storeys of the Glyph Tower: about 480 m of glass, well clear of the tallest ordinary tower. */
+const TOWER_FLOORS = 134;
+const RING: RGB = [90, 220, 255];
+const FIN: RGB = [176, 184, 198];
+
+/**
+ * The Glyph Tower: a glass shaft you can walk into, with a lobby, a sky lounge halfway up and the
+ * observation deck on the top floor, all glass. Outside: corner fins, neon rings every 60 m, a glowing
+ * crown and a spire with beacons.
+ */
+function glyphTower(B: Builder, lot: Rect): void {
+  const { faces } = B;
+  const cx = (lot.x0 + lot.x1) / 2, cz = (lot.z0 + lot.z1) / 2;
+  const half = 14;
+  const r: Rect = { x0: cx - half, z0: cz - half, x1: cx + half, z1: cz + half };
+  const fh = FLOOR_H[F_GLASS];
+  const h = TOWER_FLOORS * fh;
+  const c: RGB = [74, 100, 146];
+  const seed = facadeSeed(F_GLASS, 0, 6, 0, 2718);
+  enterable(B, {
+    rect: r, side: 0, h, mat: M_WALL, color: c, seed, capMat: M_ROOF, mask: BOX_SIDES | BOX_TOP,
+    doorW: 3, label: 'GLYPH TOWER', sign: TEXT_TOWER, open: false, canopy: true,
+    programs: [LOBBY, LOUNGE, SKYDECK], text: TEXT_SKYDECK,
+  });
+
+  for (const [sx, sz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+    const x = cx + sx * half, z = cz + sz * half;
+    faces.box(x - 0.8, 0, z - 0.8, x + 0.8, h + 12, z + 0.8, M_CONCRETE, FIN[0], FIN[1], FIN[2], 0);
+    B.colliders.push(x - 0.8, z - 0.8, x + 0.8, z + 0.8);
+    B.lights.push(x + sx * 1.2, 0.4, z + sz * 1.2, 200, 230, 255, LIGHT_LAMP);
+  }
+  for (let y = 60; y < h - 10; y += 60) {
+    faces.box(r.x0 - 0.3, y, r.z0 - 0.3, r.x1 + 0.3, y + 0.4, r.z1 + 0.3, M_NEON, RING[0], RING[1], RING[2], 0, M_NEON, BOX_SIDES);
+    // A ring is thinner than a cell from across the city, so lights along it carry it there.
+    for (const [sx, sz] of [[-1, -1], [0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0]]) {
+      B.lights.push(cx + sx * (half + 0.4), y + 0.2, cz + sz * (half + 0.4), RING[0], RING[1], RING[2], LIGHT_LANTERN);
+    }
+  }
+  // Crown: a lit glass storey, a glowing lantern, a plinth and the spire.
+  const crown = facadeSeed(F_GLASS, 0, 7, 1, 2719);
+  faces.box(cx - 11, h, cz - 11, cx + 11, h + 16, cz + 11, M_WALL, c[0], c[1], c[2], crown, M_ROOF, BOX_SIDES | BOX_TOP);
+  faces.box(cx - 7, h + 16, cz - 7, cx + 7, h + 26, cz + 7, M_NEON, 255, 206, 130, 0, M_ROOF, BOX_SIDES | BOX_TOP);
+  faces.box(cx - 3, h + 26, cz - 3, cx + 3, h + 32, cz + 3, M_CONCRETE, FIN[0], FIN[1], FIN[2], 0);
+  const top = h + 110;
+  B.poles.push(cx, h + 32, top, cz, 0.45, 200, 206, 216, G_PIPE, M_RAIL);
+  for (const y of [h + 60, h + 85, top]) B.lights.push(cx, y, cz, 255, 40, 40, LIGHT_BLINK);
+  for (const [sx, sz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+    B.lights.push(cx + sx * 11, h + 16.5, cz + sz * 11, 255, 40, 40, LIGHT_BLINK);
+    B.lights.push(cx + sx * 7.2, h + 21, cz + sz * 7.2, 255, 206, 130, LIGHT_LANTERN);
+  }
+  for (let s = 0; s < 4; s++) wallSign(B, sideOf({ x0: cx - 11, z0: cz - 11, x1: cx + 11, z1: cz + 11 }, s), [TEXT_SKYDECK], [RING], h + 3, 2);
+
+  // Podium wings either side of the entrance, and fountains on the forecourt.
+  const podium = facadeSeed(F_GLASS, 0, 5, 1, 2720);
+  for (const s of [-1, 1]) {
+    const w: Rect = s < 0 ? { x0: r.x0 - 7, z0: r.z0 + 3, x1: r.x0 - 0.8, z1: r.z1 - 3 } : { x0: r.x1 + 0.8, z0: r.z0 + 3, x1: r.x1 + 7, z1: r.z1 - 3 };
+    faces.box(w.x0, 0, w.z0, w.x1, 3 * fh, w.z1, M_WALL, c[0], c[1], c[2], podium, M_ROOF, BOX_DEFAULT);
+    B.colliders.push(w.x0, w.z0, w.x1, w.z1);
+    fountain(B, cx + s * 9, lot.z0 + 3.4, 2.4, [200, 196, 188]);
+  }
+  B.maxH = Math.max(B.maxH, top);
 }
 
 function plaza(B: Builder, lot: Rect): void {

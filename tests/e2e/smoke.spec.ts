@@ -79,6 +79,19 @@ test('works offline after the first visit', async ({ page, context }) => {
   await expect.poll(() => stat(page, 'SECTOR')).toBe('DOCKLANDS');
 });
 
+test('Enter hails a taxi, rides in the back and gets out on the sidewalk', async ({ page }) => {
+  const errors = watchErrors(page);
+  await page.goto('./?hood=seafront&time=day');
+  await expect.poll(() => stat(page, 'SECTOR')).toBe('SEAFRONT');
+  await page.keyboard.press('Enter');
+  await expect.poll(() => stat(page, 'MODE')).toContain('TAXI');
+  await expect(page.locator('#osd')).toContainText('FARE $');
+  await page.keyboard.press('Enter');
+  await expect.poll(() => stat(page, 'MODE')).toContain('WALK');
+  await expect(page.locator('#toast')).toContainText('Paid $');
+  expect(errors).toEqual([]);
+});
+
 test('phone gets touch controls and a photo mode with its own buttons @phone', async ({ page }) => {
   const errors = watchErrors(page);
   await page.goto('./?hood=downtown&time=night');
