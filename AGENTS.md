@@ -21,7 +21,7 @@ Before committing: `npm test && npm run build`. For anything visible or touching
 |---|---|
 | `src/main.ts` | Wiring: settings, input, main loop, HUD, photo/GIF, sharing, tour, resume. The only file that knows about everything. |
 | `src/render/` | Frame buffer, camera, rasterizer (`raster.ts`), per-material shading (`materials.ts`, `facades.ts`, `interiors.ts`), ground and sky (`ground.ts`, `background.ts`), lighting and fog (`surface.ts`, `daylight.ts`), presenters (`presenter.ts`), rain and snow. |
-| `src/world/` | City generation (`city.ts`, `build.ts`, `styles/*` per district), districts (`hoods.ts`), interiors and furniture, traffic, pedestrians, signals, monorail, cats, night market, fireworks, event schedule (`events.ts`). |
+| `src/world/` | City generation (`city.ts`, `build.ts`, `styles/*` per district, the Glyph Tower in `styles/downtown.ts`), districts (`hoods.ts`), interiors and furniture, traffic and the taxi cabin you ride in (`cabin.ts`), pedestrians, signals, monorail, cats, night market, fireworks, event schedule (`events.ts`). |
 | `src/audio/` | `sound.ts` (all ambience and effects) and `radio.ts` (generated music), Web Audio only. |
 | `src/game/` | Player and camera modes, keyboard/mouse input, touch controls, auto tour. |
 | `src/ui/` | HUD panel, settings persistence, quality ladder, photo mode, GIF encoder, share links, resume, PWA install, toasts. |
@@ -34,7 +34,8 @@ Before committing: `npm test && npm run build`. For anything visible or touching
 ## How a frame is made
 
 1. `renderScene` (`src/render/scene.ts`) collects visible blocks front to back and rasterizes their faces, then props,
-   poles and lights, then moving actors (`world.drawActors`).
+ poles and lights; then the Glyph Tower on its own (with its own far plane and fog) when it is past the draw
+ distance; then moving actors (`world.drawActors`), and the taxi cabin when riding in the back of one.
 2. `drawBackground` fills only cells nothing covered (depth 0): ground where the ray points down, sky elsewhere.
 3. Fireworks draw after the sky (they add light to it), rain and snow last.
 4. The presenter uploads two `cols x rows` textures and the GPU draws glyphs from an atlas.
@@ -49,6 +50,12 @@ glow (lamps, signs, windows at night).
   `rng()` calls to an existing builder stream: that reshuffles every later building in the block. Use a separate stream
   (`B.alt()`, or `mulberry32(hash3(i, j, worldSeed ^ SALT))`) or a hash of the position, as cats, market stalls and sign
   ids do.
+- **Districts.** Regions of 4x4 blocks get a district from `hoodOfRegion`. The later districts (`second: true` in
+ `HOODS`) take a share of regions by a separate roll, so the first five kept their regions and old links still land
+ in the same place. Add a new district to the second set (or a new set with its own roll), never by changing the
+ first five's weights. The Seafront's northern row of blocks is beach (`isBeach`); the Glyph Tower's block is
+ `LANDMARK_I`, `LANDMARK_J` in `world/layout.ts`.
+- **Facade seeds** hold the facade kind in bits 18-21 (`facadeOf`), so there is room for 16 kinds.
 - **Sign seeds** live in `Float32Array` face data, so they must stay below 2^24 (see `signSeed` in `world/signs.ts`).
   Add new sign texts only at the end of `SIGN_TEXTS`, and only with characters that exist in `world/font.ts`; a unit
   test checks this.

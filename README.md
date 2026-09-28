@@ -11,16 +11,23 @@ Runs in the browser on desktop and phone. No install, no sign-up, and after the 
 Every frame is a grid of characters. A software rasterizer draws the city at glyph resolution, choosing a character, a
 foreground and a background colour for each cell, and the GPU turns the grid into pixels. There are no textures,
 models, fonts or sound files: the city, its lighting and its soundtrack are all generated as you move through it, in
-about 70 kB of gzipped JavaScript.
+about 85 kB of gzipped JavaScript.
 
 ## Things to do
 
-- **Explore five districts**, each with its own architecture, street life and sound: Downtown towers, Japantown
-  shophouses and pagodas, the gabled lanes of Old Town, Parisian boulevards in Le Marais, and the Docklands.
-- **Find the 45 hidden cats**, nine per district: in shops, on sidewalks and up on the roofs. Listen for meows; their
+- **Explore nine districts**, each with its own architecture, street life and sound: Downtown towers, Japantown
+  shophouses and pagodas, the gabled lanes of Old Town, Parisian boulevards in Le Marais, the Docklands, the family
+  houses, lawns and picket fences of Maple Heights, the hedged mansions and pools of Silver Hills, the pastel Art Deco
+  hotels and beach of the Seafront, and the domes, minarets and souks of the Medina.
+- **Ride up the Glyph Tower**, a 480 m landmark downtown: walk into the lobby, take the express lift, and look out over
+  the whole city from the glass observation deck. It stays on the skyline wherever you are, so you can steer by it.
+- **Find the 81 hidden cats**, nine per district: in shops, on sidewalks and up on the roofs. Listen for meows; their
   eyes glow at night. Progress is saved.
-- **Go inside**: shops, cafes, noodle bars, arcades and offices, with furniture, customers and a lift up the building.
-- **Ride along** in a taxi or a sky taxi, take the monorail, flick through street cameras, or just fly.
+- **Go inside**: shops, cafes, noodle bars, arcades, offices, family homes, mansions and riads, with furniture,
+  people and a lift up the building.
+- **Hail a taxi** with `Enter` and ride in the back: the driver, the dashboard, the fare meter and the radio around you,
+  and the city going by the windows as you turn your head. `Enter` again pays and drops you on the sidewalk.
+- **Ride along** in a sky taxi, take the monorail, flick through street cameras, or just fly.
 - **Stay up late**: the clock runs from dusk to dawn, windows light up, street markets open on each district's main
   street, and every five minutes there are fireworks over the docks.
 - **Change the weather**: rain with thunder, snow that settles on the roofs, or fog.
@@ -32,6 +39,9 @@ about 70 kB of gzipped JavaScript.
 
 | | |
 |---|---|
+| ![The Glyph Tower at night](docs/images/tower-night.jpg) | ![The city at dusk from the Glyph Tower's observation deck](docs/images/skydeck.jpg) |
+| ![Houses, lawns and picket fences in Maple Heights](docs/images/maple-heights.jpg) | ![The beach and promenade on the Seafront](docs/images/seafront.jpg) |
+| ![A Medina street at dusk](docs/images/medina.jpg) | ![In the back of a taxi](docs/images/taxi.jpg) |
 | ![Old Town under snow](docs/images/snow.jpg) | ![Downtown skyline in the rain at dusk](docs/images/skyline.jpg) |
 | ![Inside a cafe](docs/images/interior.jpg) | ![Night market stalls](docs/images/market.jpg) |
 | ![Fireworks over the docks](docs/images/fireworks.gif) | ![Touch controls on a phone](docs/images/phone.jpg) |
@@ -42,6 +52,7 @@ about 70 kB of gzipped JavaScript.
 |---|---|
 | Click, then mouse | Look around (Esc frees the mouse) |
 | `W` `A` `S` `D` / arrows, `Shift` | Move, run |
+| `Enter` | Hail a taxi and get in the back; again to pay and get out |
 | `V` or `1`-`6` | Camera: walk, fly, street cameras, taxi, sky taxi, monorail |
 | `N` | Next camera or vehicle |
 | `E` / `Q` | Lift up / down, fly up / down, or change radio station in a cab |
@@ -56,7 +67,8 @@ about 70 kB of gzipped JavaScript.
 
 On a phone the left half of the screen is a joystick (push further to run) and the right half drags the view. The
 buttons on the right switch camera, take photos, open the map and the settings, and extra buttons appear when they are
-useful: rise and sink when flying, the lift, the radio, and the photo actions.
+useful: a taxi on the street (and get out when riding), rise and sink when flying, the lift, the radio, and the photo
+actions.
 
 The settings panel lets you pick the district, time of day, weather, how often fireworks and neon glitches happen,
 radio station, sound levels (each kind of sound can be switched off), cell size, draw distance and more. Everything is
@@ -66,7 +78,7 @@ remembered, including where you were.
 
 | Parameter | Example | |
 |---|---|---|
-| `hood` | `?hood=japantown` | Start in a district (`downtown`, `japantown`, `oldtown`, `lemarais`, `docklands`) |
+| `hood` | `?hood=japantown` | Start in a district (`downtown`, `japantown`, `oldtown`, `lemarais`, `docklands`, `mapleheights`, `silverhills`, `seafront`, `medina`) |
 | `time` | `?time=night` | `cycle`, `dusk`, `night`, `dawn`, `day` |
 | `weather` | `?weather=snow` | `clear`, `rain`, `snow`, `fog` |
 | `tour` | `?tour=1` | Start the auto tour right away |
