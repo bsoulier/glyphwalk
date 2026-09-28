@@ -68,6 +68,9 @@ glow (lamps, signs, windows at night).
   `loadSettings` if they are enums, shown in `index.html` + `ui/hud.ts`, and wired in `main.ts`. Storage keys:
   `glyphwalk.settings.v1`, `glyphwalk.cats.v1`, `glyphwalk.view.v1`. URL parameters (`hood`, `cam`, `mode`, `floor`,
   `time`, `hour`, `weather`, `seed`, `tour`) override saved state.
+- **HUD.** The panel keeps only the district, time, weather, events and volume in view; everything else goes in its
+  folding sections. Keys that apply only in some situations belong in `prompts()` in `main.ts` (the line at the bottom
+  of the screen) and, for phones, `touchContext()`, not in the panel's key list.
 - **Performance.** The main loop runs at up to 120 fps. Avoid allocations in per-cell and per-face code, cull with
   `sphereVisible` before drawing actors, and check changes on a throttled CPU; `ui/quality.ts` trades cell size and draw
   distance when frames run long.

@@ -22,52 +22,49 @@
     <aside id="hud">
       <div class="title">GLYPHWALK <span class="dim">// v0.2</span></div>
       <pre id="stats"></pre>
+      <div id="goal" class="dim">Find 9 cats in every district. Listen for meows.</div>
       <label>District <select id="sel-hood"></select></label>
       <label>Time of day <select id="sel-time"></select></label>
       <label>Weather <select id="sel-weather"></select></label>
       <label>Fireworks &amp; neon <select id="sel-events"></select></label>
-      <label>Taxi radio <select id="sel-radio"></select></label>
-      <label>Cell size <select id="sel-cell"></select></label>
-      <label>Target <select id="sel-fps"></select></label>
-      <label>Draw distance <select id="sel-dist"></select></label>
-      <label>Field of view <select id="sel-fov"></select></label>
-      <label>Style <select id="sel-style"></select></label>
       <div class="sound">
         <label class="check"><input type="checkbox" id="chk-sound" /> Sound</label>
         <input type="range" id="rng-volume" min="0" max="100" step="5" aria-label="Volume" />
       </div>
-      <div id="sound-kinds" class="kinds"></div>
-      <label class="check"><input type="checkbox" id="chk-nerds" /> Stats for nerds</label>
+      <details data-section="sound">
+        <summary>Sounds &amp; radio</summary>
+        <div id="sound-kinds" class="kinds"></div>
+        <label>Taxi radio <select id="sel-radio"></select></label>
+      </details>
+      <details data-section="display">
+        <summary>Display</summary>
+        <label>Cell size <select id="sel-cell"></select></label>
+        <label>Target <select id="sel-fps"></select></label>
+        <label>Draw distance <select id="sel-dist"></select></label>
+        <label>Field of view <select id="sel-fov"></select></label>
+        <label>Style <select id="sel-style"></select></label>
+        <label class="check"><input type="checkbox" id="chk-nerds" /> Stats for nerds</label>
+      </details>
+      <details data-section="keys">
+        <summary>Keys</summary>
+        <pre class="help">
+WASD  move       SHIFT run
+V 1-6 camera     N  next cam
+B     district   M  map
+P     photo      L  link
+O     tour       F  fullscreen
+R     weather    Y  time
+G     style      T  scanlines
+U     sound      I  stats
+[ ]   cells      H  hide panel
+Other keys show up when they
+apply: lifts, taxis, the map.</pre>
+      </details>
       <div class="actions">
         <button id="btn-share" type="button">Share this view</button>
         <button id="btn-install" type="button" hidden>Install app</button>
       </div>
       <div id="ios-hint" class="dim" hidden>Play full screen: Share, then Add to Home Screen</div>
-      <pre class="help">
-GOAL      find 9 cats in every district:
-          shops, sidewalks, roofs. Listen
-          for meows; eyes glow at night.
-NIGHT     markets on each district's main
-          street; every 5 minutes fireworks
-          over the docks and a neon brownout
-CLICK     capture mouse (Esc frees it)
-WASD      move    SHIFT run
-Q / E     down / up (fly mode)
-          radio station (taxi, sky taxi)
-V  1-6    camera mode (stays in district)
-N         next cam / vehicle
-B         jump to next district
-M         map: mini / full / off
-+  -      map zoom, click map to jump
-E / Q     lift up / down (lit doors
-          and E on the map can be entered)
-[  ]      denser / faster cells
-P photo mode (Enter png, G gif, C text)
-L copy a link to this exact view
-O auto tour (starts when idle)
-R weather  Y time of day  U sound
-G style  T scanlines  F fullscreen
-I stats for nerds  H hide this panel</pre>
     </aside>
 
     <div id="corner">
@@ -77,7 +74,7 @@ I stats for nerds  H hide this panel</pre>
       </div>
       <pre id="osd"></pre>
     </div>
-    <div id="hint">H panel &middot; V mode &middot; [ ] cell size</div>
+    <div id="prompt"></div>
 
     <script type="module" src="/src/main.ts"></script>
   </body>

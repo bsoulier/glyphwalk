@@ -136,6 +136,54 @@ body {
   opacity: 0.45;
 }
 
+/* Wraps to the panel's width instead of setting it. */
+#hud #goal {
+  width: 0;
+  min-width: 100%;
+  margin: -4px 0 8px;
+}
+
+#hud details {
+  margin: 4px 0;
+  padding-top: 4px;
+  border-top: 1px solid #12351f;
+}
+
+#hud summary {
+  list-style: none;
+  color: #4fa877;
+  cursor: pointer;
+}
+
+#hud summary::-webkit-details-marker {
+  display: none;
+}
+
+#hud summary::before {
+  content: '+ ';
+  color: #3f8a61;
+}
+
+#hud details[open] > summary {
+  color: #b8ffd6;
+}
+
+#hud details[open] > summary::before {
+  content: '- ';
+}
+
+#hud summary:hover {
+  color: #b8ffd6;
+}
+
+#hud details .kinds {
+  margin-top: 4px;
+}
+
+#hud details .help {
+  margin: 4px 0 2px;
+}
+
 /*
  * On a phone the panel is opened from MENU: it sits on the left, above the touch zones, so the button
  * column on the right stays reachable, and it scrolls to reach everything.
@@ -226,31 +274,44 @@ body.touch #nerds {
   display: block;
 }
 
-#hint {
+/* What can be done right here: a key or two, only while they apply. */
+#prompt {
   position: fixed;
-  right: 14px;
-  bottom: 10px;
-  color: #3f8a61;
-  font-size: 11px;
-  pointer-events: none;
-}
-
-body.touch #hint {
-  right: auto;
   left: 50%;
+  bottom: max(12px, env(safe-area-inset-bottom));
   transform: translateX(-50%);
-  transition: opacity 1.5s;
+  padding: 4px 10px;
+  background: rgba(2, 10, 6, 0.7);
+  border: 1px solid #1f5a3a;
+  color: #7dbf98;
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.4s;
 }
 
-body.touch #hint.gone {
-  opacity: 0;
+#prompt.on {
+  opacity: 1;
+}
+
+#prompt b {
+  color: #e8ffe8;
+  font-weight: normal;
+}
+
+/* Phones keep the bottom for the minimap and the buttons; toasts use the very top. */
+body.touch #prompt {
+  top: calc(max(12px, env(safe-area-inset-top)) + 34px);
+  bottom: auto;
+  font-size: 11px;
 }
 
 /* ---- photo mode ---- */
 
 body.photo #hud,
 body.photo #corner,
-body.photo #hint,
+body.photo #prompt,
 body.photo #touch .t-bar {
   display: none;
 }

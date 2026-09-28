@@ -27,6 +27,8 @@ export interface Settings {
   mapZoom: number;
   /** How often fireworks and neon glitches happen. */
   events: EventMode;
+  /** Ids of the settings panel's folding sections that are open. */
+  open: string[];
 }
 
 const KEY = 'glyphwalk.settings.v1';
@@ -49,6 +51,7 @@ const DEFAULTS: Settings = {
   nerds: false,
   mapZoom: 1,
   events: 'periodic',
+  open: [],
 };
 
 export function loadSettings(): Settings {
@@ -64,12 +67,13 @@ export function loadSettings(): Settings {
       if (!EVENT_MODES.includes(s.events)) s.events = DEFAULTS.events;
       if (!Array.isArray(s.soundOff)) s.soundOff = [];
       s.soundOff = s.soundOff.filter((k) => SOUND_KINDS.includes(k));
+      s.open = Array.isArray(s.open) ? s.open.filter((id) => typeof id === 'string') : [];
       return s;
     }
   } catch {
     // Corrupt or blocked storage just means defaults.
   }
-  return { ...DEFAULTS, soundOff: [] };
+  return { ...DEFAULTS, soundOff: [], open: [] };
 }
 
 export function saveSettings(s: Settings): void {

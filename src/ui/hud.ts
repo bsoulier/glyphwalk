@@ -24,7 +24,11 @@ export interface HudHandlers {
   onSoundKind(kind: SoundKind, on: boolean): void;
   onNerds(on: boolean): void;
   onEvents(mode: EventMode): void;
+  onSection(id: string, open: boolean): void;
 }
+
+/** One thing that can be done right now: a key (empty for plain advice) and what it does. */
+export type Prompt = readonly [key: string, action: string];
 
 const DISTANCES = [120, 180, 260, 400, 600];
 const FOVS = [50, 62, 75, 90];
@@ -67,6 +71,10 @@ export class Hud {
   private readonly kindsBox = $('sound-kinds');
   private readonly kinds = new Map<SoundKind, HTMLInputElement>();
   private readonly nerdsCheck = $('chk-nerds') as HTMLInputElement;
+  private readonly goal = $('goal');
+  private readonly prompt = $('prompt');
+  private promptKey = '';
+  private readonly sections = Array.from(this.root.querySelectorAll<HTMLDetailsElement>('details[data-section]'));
 
   constructor(handlers: HudHandlers) {
     fill(this.time, TIME_MODES.map((m): [string, string] => [m, TIME_LABELS[m]]));
@@ -123,6 +131,11 @@ export class Hud {
     }
     check(this.nerdsCheck, (on) => handlers.onNerds(on));
     $('nerds-close').addEventListener('click', () => handlers.onNerds(false));
+    for (const d of this.sections) {
+      // A focused summary would take Space and Enter, which the game uses.
+      d.querySelector('summary')?.addEventListener('mousedown', (e) => e.preventDefault());
+      d.addEventListener('toggle', () => handlers.onSection(d.dataset.section ?? '', d.open));
+    }
   }
 
   sync(s: Settings, cellSetting: string): void {
@@ -142,6 +155,33 @@ export class Hud {
     this.nerdsCheck.checked = s.nerds;
     this.nerds.hidden = !s.nerds;
     this.root.classList.toggle('hidden', !s.hud);
+    for (const d of this.sections) {
+      const open = s.open.includes(d.dataset.section ?? '');
+      if (d.open !== open) d.open = open;
+    }
+  }
+
+  /** The goal line is for newcomers: it goes once the first cat is found. */
+  setGoal(show: boolean): void {
+    this.goal.hidden = !show;
+  }
+
+  /** The line under the view with what can be done right here; rebuilt only when it changes. */
+  setPrompt(items: readonly Prompt[]): void {
+    const key = items.map((p) => p.join('\t')).join('\n');
+    if (key === this.promptKey) return;
+    this.promptKey = key;
+    this.prompt.replaceChildren();
+    items.forEach(([k, action], n) => {
+      if (n > 0) this.prompt.append(' \u00b7 ');
+      if (k) {
+        const b = document.createElement('b');
+        b.textContent = k;
+        this.prompt.append(b, ' ');
+      }
+      this.prompt.append(action);
+    });
+    this.prompt.classList.toggle('on', items.length > 0);
   }
 
   /** Reflects the district under the camera, unless the user is currently choosing one. */

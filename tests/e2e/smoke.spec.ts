@@ -57,12 +57,17 @@ test('remembers settings and position across a reload', async ({ page }) => {
   await page.selectOption('#sel-hood', '3');
   await page.selectOption('#sel-weather', 'fog');
   await page.selectOption('#sel-events', 'off');
+  await expect(page.locator('#sel-fov')).toBeHidden();
+  await page.locator('summary', { hasText: 'Display' }).click();
+  await page.selectOption('#sel-fov', '75');
   await expect.poll(() => stat(page, 'SECTOR')).toBe('LE MARAIS');
   await page.waitForTimeout(2500);
   await page.reload();
   await expect.poll(() => stat(page, 'SECTOR')).toBe('LE MARAIS');
   await expect(page.locator('#sel-weather')).toHaveValue('fog');
   await expect(page.locator('#sel-events')).toHaveValue('off');
+  await expect(page.locator('#sel-fov')).toBeVisible();
+  await expect(page.locator('#sel-fov')).toHaveValue('75');
 });
 
 test('works offline after the first visit', async ({ page, context }) => {
@@ -83,9 +88,11 @@ test('Enter hails a taxi, rides in the back and gets out on the sidewalk', async
   const errors = watchErrors(page);
   await page.goto('./?hood=seafront&time=day');
   await expect.poll(() => stat(page, 'SECTOR')).toBe('SEAFRONT');
+  await expect(page.locator('#prompt')).toContainText('ENTER taxi');
   await page.keyboard.press('Enter');
   await expect.poll(() => stat(page, 'MODE')).toContain('TAXI');
   await expect(page.locator('#osd')).toContainText('FARE $');
+  await expect(page.locator('#prompt')).toContainText('ENTER get out');
   await page.keyboard.press('Enter');
   await expect.poll(() => stat(page, 'MODE')).toContain('WALK');
   await expect(page.locator('#toast')).toContainText('Paid $');

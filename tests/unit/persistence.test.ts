@@ -21,7 +21,7 @@ describe('settings', () => {
 
   it('round-trips every choice the user makes', () => {
     const s = loadSettings();
-    Object.assign(s, { weather: 'snow', time: 'night', events: 'off', style: 2, dist: 180, station: 3, volume: 0.4, soundOff: ['radio'], nerds: true, mapZoom: 3 });
+    Object.assign(s, { weather: 'snow', time: 'night', events: 'off', style: 2, dist: 180, station: 3, volume: 0.4, soundOff: ['radio'], nerds: true, mapZoom: 3, open: ['display'] });
     saveSettings(s);
     expect(loadSettings()).toEqual(s);
   });
@@ -29,9 +29,9 @@ describe('settings', () => {
   it('repairs old or damaged saves instead of failing', () => {
     store.set('glyphwalk.settings.v1', JSON.stringify({ rain: false }));
     expect(loadSettings().weather).toBe('clear');
-    store.set('glyphwalk.settings.v1', JSON.stringify({ weather: 'hail', events: 'sometimes', soundOff: ['radio', 'bogus'] }));
+    store.set('glyphwalk.settings.v1', JSON.stringify({ weather: 'hail', events: 'sometimes', soundOff: ['radio', 'bogus'], open: 'keys' }));
     const s = loadSettings();
-    expect([s.weather, s.events, s.soundOff]).toEqual(['rain', 'periodic', ['radio']]);
+    expect([s.weather, s.events, s.soundOff, s.open]).toEqual(['rain', 'periodic', ['radio'], []]);
     store.set('glyphwalk.settings.v1', '{not json');
     expect(loadSettings().weather).toBe('rain');
   });

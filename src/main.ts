@@ -26,7 +26,7 @@ import { brownoutAt } from './world/events';
 import { setNeon } from './render/facades';
 import { World } from './world/world';
 import { GifRecorder } from './ui/gif';
-import { Hud } from './ui/hud';
+import { Hud, type Prompt } from './ui/hud';
 import { PhotoMode } from './ui/photo';
 import { setupPwa } from './ui/pwa';
 import { loadResume, saveResume } from './ui/resume';
@@ -233,6 +233,11 @@ const hud = new Hud({
     settings.events = mode;
     persist();
   },
+  onSection: (id, open) => {
+    if (settings.open.includes(id) === open) return;
+    settings.open = open ? [...settings.open, id] : settings.open.filter((s) => s !== id);
+    persist();
+  },
 });
 
 function setSound(on: boolean): void {
@@ -326,11 +331,12 @@ if (touch) {
   // The settings panel covers half a phone screen; it starts hidden and MENU brings it back.
   settings.hud = false;
   hud.sync(settings, quality.cellSetting);
-  const hint = document.getElementById('hint') as HTMLElement;
-  hint.textContent = 'left: move (push far to run) \u00b7 right: look';
   document.body.classList.add('touch');
-  setTimeout(() => hint.classList.add('gone'), 8000);
 }
+/** Until then, phones show how the two halves of the screen work. */
+const touchIntroUntil = performance.now() + 8000;
+/** Walking keys are shown until the player has used them. */
+let hasMoved = false;
 
 const photo = new PhotoMode(touch !== null);
 photo.onShot = () => sound.shutter();
@@ -411,6 +417,62 @@ function touchContext(): TouchButton[] {
   return [];
 }
 
+const MOVE_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
+
+/**
+ * The keys that do something right here, for the line under the view. Phones have buttons for those,
+ * so they only get the advice that has no button.
+ */
+function prompts(): Prompt[] {
+  if (photo.active || tour.active) return [];
+  const p: Prompt[] = [];
+  const it = player.inside(world);
+  if (touch) {
+    if (performance.now() < touchIntroUntil) p.push(['', 'left: move (push far to run) \u00b7 right: look']);
+  } else if (fullMap) {
+    return [['CLICK', 'jump there'], ['+ -', 'zoom'], ['M', 'close']];
+  } else if (!input.locked && player.mode !== 'cctv') p.push(['CLICK', 'look around']);
+  const keys = !touch;
+  switch (player.mode) {
+    case 'walk': {
+      if (it) {
+        if (player.liftMoving) break;
+        if (!inCab(it, player.x, player.z)) {
+          if (it.lift) p.push(['', 'lift at the back']);
+        } else if (keys) {
+          const k = it.levels.findIndex((l) => Math.abs(l.y - player.floorY) < 0.5);
+          if (k < it.levels.length - 1) p.push(['E', 'lift up']);
+          if (k > 0) p.push(['Q', 'lift down']);
+        }
+        break;
+      }
+      if (keys && !hasMoved) p.push(['WASD', 'move']);
+      const door = world.city.doorNear(player.x, player.z, 4);
+      if (door) p.push(['', `walk in: ${door.label}`]);
+      if (keys) p.push(['ENTER', 'taxi']);
+      if (keys && !hasMoved) p.push(['V', 'camera modes']);
+      break;
+    }
+    case 'fly':
+      if (keys) p.push(['E', 'up'], ['Q', 'down'], ['1', 'walk']);
+      break;
+    case 'taxi':
+      if (keys) p.push(['ENTER', 'get out'], ['Q E', 'radio'], ['N', 'next taxi']);
+      break;
+    case 'sky':
+      if (keys) p.push(['Q E', 'radio'], ['N', 'next'], ['1', 'walk']);
+      break;
+    case 'cctv':
+      if (keys) p.push(['N', 'next camera'], ['1', 'walk']);
+      break;
+    case 'rail':
+      if (keys) p.push(['1', 'walk']);
+      break;
+  }
+  if (keys && !settings.hud) p.push(['H', 'menu']);
+  return p;
+}
+
 canvas.addEventListener('wheel', (e) => {
   if (!fullMap) return;
   e.preventDefault();
@@ -424,6 +486,7 @@ player.onCut = () => {
 
 function handleKeys(): void {
   for (const code of input.takePressed()) {
+    if (MOVE_KEYS.has(code)) hasMoved = true;
     if (code.startsWith('Digit')) {
       const n = Number(code.slice(5));
       if (n >= 1 && n <= MODES.length) player.setMode(MODES[n - 1], world);
@@ -452,7 +515,7 @@ function handleKeys(): void {
           player.setMode('walk', world);
         } else if (player.mode === 'walk' && !player.inside(world)) {
           player.setMode('taxi', world);
-          toast(`Taxi! You're in the back: look around with the ${touch ? 'right thumb' : 'mouse'}, ${touch ? 'GET OUT' : 'Enter'} to get out.`, 4000);
+          toast("Taxi! You're in the back seat.", 2500);
         }
         break;
       case 'KeyC': if (photo.active) photo.copyText(fb); break;
@@ -545,7 +608,7 @@ function updateHud(): void {
   hud.setStats([
     `MODE     ${MODE_LABELS[player.mode]}`,
     `SECTOR   ${district}${indoors ? ` / ${indoors.label}` : ''}`,
-    `CATS     ${district} ${world.cats.count(hood)}/${CATS_PER_HOOD}   city ${world.cats.total}/${CATS_PER_HOOD * HOODS.length}`,
+    `CATS     ${world.cats.count(hood)}/${CATS_PER_HOOD} here   ${world.cats.total}/${CATS_PER_HOOD * HOODS.length} city`,
     `TIME     ${clockText(sky.hour)} ${sky.label}${settings.time === 'cycle' ? '' : ' (fixed)'}`,
     `WEATHER  ${WEATHER_LABELS[settings.weather].toUpperCase()}`,
   ].join('\n'));
@@ -577,18 +640,19 @@ function updateHud(): void {
   } else if (riding()) {
     const st = STATIONS[settings.station];
     const radio = st ? `\u266a ${st.name}  ${st.genre}` : '\u266a radio off';
-    const fare = player.mode === 'taxi' ? `\nFARE $${player.fare.toFixed(2)}  (${touch ? 'GET OUT' : 'Enter'} to get out)` : '';
-    osd = `${MODE_LABELS[player.mode]}\n${district} loop\nN: next ${player.mode === 'taxi' ? 'taxi' : 'vehicle'} in ${district}\n${radio}  (${touch ? 'RADIO' : 'Q / E'} to tune)${fare}`;
+    const fare = player.mode === 'taxi' ? `\nFARE $${player.fare.toFixed(2)}` : '';
+    osd = `${MODE_LABELS[player.mode]}\n${district} loop\n${radio}${fare}`;
   } else if (player.mode === 'rail') {
     osd = `${MODE_LABELS[player.mode]}\n${district} shuttle`;
   } else if (indoors) {
     const lv = levelAt(indoors, player.floorY);
-    const hint = player.liftMoving ? `LIFT moving...  ${Math.round(player.floorY)} m`
-      : inCab(indoors, player.x, player.z) ? `LIFT  ${touch ? 'LIFT UP / LIFT DN' : 'E up / Q down'}` : indoors.lift ? 'Lift at the back' : '';
-    osd = `${indoors.label}\n${lv ? lv.name : ''}\n${hint}`;
+    const lift = player.liftMoving ? `\nLIFT moving...  ${Math.round(player.floorY)} m` : '';
+    osd = `${indoors.label}\n${lv ? lv.name : ''}${lift}`;
   }
   if (tour.active) osd = `AUTO TOUR - ${touch ? 'touch' : 'press any key'} to take over\n${osd ?? ''}`;
   hud.setOsd(osd);
+  hud.setGoal(world.cats.total === 0);
+  hud.setPrompt(prompts());
 }
 
 function soundFrame(dt: number): void {

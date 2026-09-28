@@ -149,6 +149,15 @@ export class City {
     }
     return null;
   }
+
+  /** The building whose street door is within `r` metres of (x, z). */
+  doorNear(x: number, z: number, r: number): Interior | null {
+    for (const it of this.get(Math.floor(x / P), Math.floor(z / P)).interiors) {
+      const dx = x - it.door.x, dz = z - it.door.z;
+      if (dx * dx + dz * dz < r * r) return it;
+    }
+    return null;
+  }
 }
 
 export function generateBlock(i: number, j: number): Block {

@@ -70,9 +70,10 @@ buttons on the right switch camera, take photos, open the map and the settings, 
 useful: a taxi on the street (and get out when riding), rise and sink when flying, the lift, the radio, and the photo
 actions.
 
-The settings panel lets you pick the district, time of day, weather, how often fireworks and neon glitches happen,
-radio station, sound levels (each kind of sound can be switched off), cell size, draw distance and more. Everything is
-remembered, including where you were.
+The settings panel lets you pick the district, time of day, weather, how often fireworks and neon glitches happen and
+the volume; folding sections hold the radio station and each kind of sound, the display options, and the key list.
+Everything is remembered, including where you were and which sections were open. Keys that only apply in some places
+(the lift, a taxi, the map, flying) are shown at the bottom of the screen while they apply.
 
 ### Links that open a specific view
 
