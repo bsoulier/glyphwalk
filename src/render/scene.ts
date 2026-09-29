@@ -83,8 +83,8 @@ export function renderScene(fb: FrameBuffer, cam: Camera, world: World, env: Fra
 
 /** From the back seat, anything nearer than this is inside the car. */
 const CAB_REACH = 1.6;
-/** From the front of a monorail car, the same for rain. */
-const CAR_REACH = 1.5;
+/** From where a monorail rider stands, the same for rain: the front window is this far ahead. */
+const CAR_REACH = 2.6;
 
 /** How far away the Glyph Tower still shows over the city, as a hazy silhouette with its beacons. */
 const LANDMARK_RANGE = 2600;

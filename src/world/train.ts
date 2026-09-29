@@ -177,9 +177,12 @@ function crowd(b: Built, slot: number): Float32Array {
 /** Seats on each side of a car, between the doors, in metres along it from its middle. */
 const BENCHES: readonly (readonly [number, number])[] = [[-5.2, -3.4], [-1.9, 1.9], [3.4, 5.2]];
 const DOORS = [-2.65, 2.65];
-/** Where a rider sits: at the very front of the leading car (metres ahead of its middle), looking out of the front window. */
-export const RIDE_SEAT = CAR_LEN / 2 - 0.55;
-export const RIDE_EYE = CAR_FLOOR + 1.3;
+/**
+ * Where a rider stands: near the front of the leading car (metres ahead of its middle), far enough back
+ * that the front window's frame, the ceiling and the seats beside stay in view.
+ */
+export const RIDE_SEAT = CAR_LEN / 2 - 2.4;
+export const RIDE_EYE = CAR_FLOOR + 1.62;
 /** The same seat, measured from the middle of the train. */
 const RIDE_FWD = RIDE_SEAT + ((CARS - 1) / 2) * (CAR_LEN + CAR_GAP);
 
@@ -190,15 +193,16 @@ function passengers(k: number, m: number, trip: number, out: number[]): void {
   for (const [f0, f1] of BENCHES) {
     for (let f = f0 + 0.3; f < f1; f += 0.6) {
       for (const s of [-1, 1]) {
-        // The seat next to where a rider sits at the front stays free.
-        if (m === 0 && f > 4.4 && s > 0) continue;
         if (rnd() < 0.3) out.push(f, s * 1.0, s > 0 ? -Math.PI / 2 : Math.PI / 2, POSE_CHAIR, Math.floor(rnd() * 1e6));
       }
     }
   }
   const standing = Math.floor(rnd() * 4);
   for (let n = 0; n < standing; n++) {
-    out.push(DOORS[n & 1] + (rnd() - 0.5) * 0.8, (rnd() - 0.5) * 0.9, (rnd() - 0.5) * 6, POSE_STAND, Math.floor(rnd() * 1e6));
+    const f = DOORS[n & 1] + (rnd() - 0.5) * 0.8, r = (rnd() - 0.5) * 0.9, yaw = (rnd() - 0.5) * 6, seed = Math.floor(rnd() * 1e6);
+    // Nobody stands where a rider does.
+    if (m === 0 && Math.abs(f - RIDE_SEAT) < 0.8 && Math.abs(r) < 0.6) continue;
+    out.push(f, r, yaw, POSE_STAND, seed);
   }
 }
 
@@ -330,12 +334,13 @@ export class Rail {
     for (let m = 0; m < CARS; m++) {
       const p = carPoint(ref.cx, ref.cz, t.s, m, this.ridePt);
       const yaw = p.yaw, fX = Math.sin(yaw), fZ = Math.cos(yaw), rX = fZ, rZ = -fX;
-      const slab = (f: number, r: number, yc: number, hx: number, hy: number, hz: number, mat: number, c: RGB) =>
-        drawBoxYaw(p.x + fX * f + rX * r, yF + yc, p.z + fZ * f + rZ * r, yaw, hx, hy, hz, mat, c[0], c[1], c[2], 0);
+      const slab = (f: number, r: number, yc: number, hx: number, hy: number, hz: number, mat: number, c: RGB, mask = 31) =>
+        drawBoxYaw(p.x + fX * f + rX * r, yF + yc, p.z + fZ * f + rZ * r, yaw, hx, hy, hz, mat, c[0], c[1], c[2], 0, mask);
       const half = CAR_LEN / 2 - 0.05;
       slab(0, 0, 0.02, 1.3, 0.02, half, M_FLOOR, [80, 84, 94]);
-      slab(0, 0, 2.52, 1.3, 0.02, half, M_CEILING, [215, 218, 224]);
-      slab(0, 0, 2.49, 0.12, 0.01, half - 0.5, M_GLOW, [255, 244, 222]);
+      // The ceiling and its light are seen from below, so they need their undersides.
+      slab(0, 0, 2.52, 1.3, 0.02, half, M_CEILING, [215, 218, 224], 32);
+      slab(0, 0, 2.49, 0.12, 0.01, half - 0.5, M_GLOW, [255, 244, 222], 47);
       for (const s of [-1, 1]) {
         slab(0, s * 1.31, 0.5, 0.03, 0.5, half, M_PLASTER, [196, 202, 210]);
         slab(0, s * 1.31, 2.3, 0.03, 0.22, half, M_PLASTER, [196, 202, 210]);
