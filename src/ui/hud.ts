@@ -10,6 +10,8 @@ import type { Settings } from './settings';
 
 export interface HudHandlers {
   onHood(hood: number): void;
+  /** Go to the Glyph Tower: its observation deck, or its doors. */
+  onTower(deck: boolean): void;
   onCell(id: string): void;
   onFps(fps: number): void;
   onDist(dist: number): void;
@@ -41,6 +43,10 @@ function $(id: string): HTMLElement {
   if (!el) throw new Error(`#${id} missing`);
   return el;
 }
+
+/** Values of the Glyph Tower entries in the district list. */
+const TOWER_DECK = 'tower-deck';
+const TOWER_DOOR = 'tower-door';
 
 function fill(sel: HTMLSelectElement, options: readonly [string, string][]): void {
   sel.innerHTML = '';
@@ -88,6 +94,16 @@ export class Hud {
     fill(this.events, EVENT_MODES.map((m): [string, string] => [m, EVENT_LABELS[m]]));
     fill(this.radio, [...STATIONS.map((s, k): [string, string] => [String(k), `${s.name} (${s.genre})`]), [String(RADIO_OFF), 'Off']]);
     fill(this.hood, HOODS.map((h, k): [string, string] => [String(k), h.name]));
+    // The landmark is picked from the same list as the districts, because that is where people look for places.
+    const landmark = document.createElement('optgroup');
+    landmark.label = 'Landmark';
+    for (const [value, label] of [[TOWER_DECK, 'GLYPH TOWER: top deck'], [TOWER_DOOR, 'GLYPH TOWER: entrance']]) {
+      const o = document.createElement('option');
+      o.value = value;
+      o.textContent = label;
+      landmark.append(o);
+    }
+    this.hood.append(landmark);
     fill(this.cell, [['auto', 'Auto (fit target FPS)'], ...CELL_PRESETS.map((p): [string, string] => [p.id, p.label])]);
     fill(this.fps, FPS.map((f): [string, string] => [String(f), `${f} fps`]));
     fill(this.dist, DISTANCES.map((d): [string, string] => [String(d), `${d} m`]));
@@ -99,7 +115,10 @@ export class Hud {
         sel.blur();
       });
     };
-    bind(this.hood, (v) => handlers.onHood(Number(v)));
+    bind(this.hood, (v) => {
+      if (v === TOWER_DECK || v === TOWER_DOOR) handlers.onTower(v === TOWER_DECK);
+      else handlers.onHood(Number(v));
+    });
     bind(this.cell, (v) => handlers.onCell(v));
     bind(this.fps, (v) => handlers.onFps(Number(v)));
     bind(this.dist, (v) => handlers.onDist(Number(v)));
@@ -214,6 +233,7 @@ export class Hud {
     this.countsKey = key;
     const by = new Map(counts ?? []);
     for (const o of this.hood.options) {
+      if (o.value === TOWER_DECK || o.value === TOWER_DOOR) continue;
       const k = Number(o.value), n = by.get(k) ?? 0;
       o.textContent = n > 0 ? `${HOODS[k].name} (${n} online)` : HOODS[k].name;
     }

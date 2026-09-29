@@ -20,7 +20,8 @@ about 90 kB of gzipped JavaScript.
   houses, lawns and picket fences of Maple Heights, the hedged mansions and pools of Silver Hills, the pastel Art Deco
   hotels and beach of the Seafront, and the domes, minarets and souks of the Medina.
 - **Ride up the Glyph Tower**, a 480 m landmark downtown: walk into the lobby, take the express lift, and look out over
-  the whole city from the glass observation deck. It stays on the skyline wherever you are, so you can steer by it.
+  the whole city from the glass observation deck. It stays on the skyline wherever you are, so you can steer by it,
+  or press `K` (or pick it in the District list) to go straight there.
 - **Find the 81 hidden cats**, nine per district: in shops, on sidewalks and up on the roofs. Listen for meows; their
   eyes glow at night. Progress is saved.
 - **Go inside**: shops, cafes, noodle bars, arcades, offices, family homes, mansions and riads, with furniture,
@@ -61,6 +62,7 @@ about 90 kB of gzipped JavaScript.
 | `N` | Next camera or vehicle |
 | `E` / `Q` | Lift up / down, fly up / down, or change radio station in a cab |
 | `B` / `M` | Next district / map (mini, full, off; click the full map to jump) |
+| `K` | Straight to the Glyph Tower's observation deck (the District list also has it, and the tower's entrance) |
 | `P` | Photo mode: `Enter` PNG, `G` GIF, `C` copy as text |
 | `L` | Copy a link to this exact view |
 | `R` / `Y` | Weather / time of day |

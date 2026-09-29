@@ -21,7 +21,7 @@ import { RADIO_OFF, STATIONS } from './audio/radio';
 import { inCab, levelAt } from './world/interior';
 import { CAB_FOV } from './world/cabin';
 import { signalPhase, walkWindow } from './world/signals';
-import { EYE_H, P, setWorldSeed, worldSeed } from './world/layout';
+import { EYE_H, LANDMARK_I, LANDMARK_J, P, setWorldSeed, worldSeed } from './world/layout';
 import { brownoutAt } from './world/events';
 import { setNeon } from './render/facades';
 import { World } from './world/world';
@@ -142,6 +142,31 @@ function goToHood(hood: number): void {
   world.city.prime();
 }
 
+/**
+ * The Glyph Tower, from anywhere: on the forecourt at its doors, or straight up on the observation deck,
+ * just inside the glass between the telescopes and the benches, looking out over the city.
+ */
+function goToTower(deck: boolean): void {
+  const tower = world.city.get(LANDMARK_I, LANDMARK_J).interiors.find((it) => it.label === 'GLYPH TOWER');
+  if (!tower) return;
+  const d = tower.door;
+  if (!deck) {
+    player.teleport(d.x + d.nx * 3.8, d.z + d.nz * 3.8, Math.atan2(-d.nx, -d.nz), world);
+    player.pitch = 0.45;
+    toast('The Glyph Tower. Walk in; the lift at the back goes up to the observation deck.', 3500);
+  } else {
+    const top = tower.levels[tower.levels.length - 1];
+    const x0 = (tower.x0 + tower.x1) / 2, z = d.z - d.nz * 2.4;
+    const x = [3, -3, 6, -6, 0].map((o) => x0 + d.tx * o).find((x) => !world.blocked(x, z, 0.35, top.y)) ?? x0;
+    player.teleport(x, z, Math.atan2(d.nx, d.nz), world);
+    player.floorY = top.y;
+    player.y = top.y + EYE_H;
+    player.pitch = -0.22;
+    toast(`Glyph Tower observation deck, ${Math.round(top.y)} m up. The lift goes back down.`, 3500);
+  }
+  world.city.prime();
+}
+
 const hoodParam = params.get('hood');
 if (hoodParam) {
   const k = HOODS.findIndex((h, n) => String(n) === hoodParam || h.name.replace(/\s+/g, '').toLowerCase() === hoodParam.toLowerCase());
@@ -199,6 +224,7 @@ function cycleMap(): void {
 
 const hud = new Hud({
   onHood: (hood) => goToHood(hood),
+  onTower: (deck) => goToTower(deck),
   onCell: (id) => {
     quality.set(id);
     settings.cell = quality.cellSetting;
@@ -718,6 +744,7 @@ function handleKeys(): void {
       case 'KeyV': player.cycle(1, world); break;
       case 'KeyN': player.next(world); break;
       case 'KeyB': goToHood((currentHood() + 1) % HOODS.length); break;
+      case 'KeyK': goToTower(true); break;
       case 'KeyM': cycleMap(); break;
       case 'KeyE':
         if (riding()) tune(settings.station + 1);
