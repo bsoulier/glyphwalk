@@ -27,7 +27,11 @@ about 90 kB of gzipped JavaScript.
   people and a lift up the building.
 - **Hail a taxi** with `Enter` and ride in the back: the driver, the dashboard, the fare meter and the radio around you,
   and the city going by the windows as you turn your head. `Enter` again pays and drops you on the sidewalk.
-- **Ride along** in a sky taxi, take the monorail, flick through street cameras, or just fly.
+- **Take the monorail**: loop lines circle every few districts with twelve stations each. Climb the stairs to a
+  covered platform (benches, people waiting, and a MIND THE GAP sign), board with `Enter` when a train pulls in, and
+  ride up front among the other passengers; `Enter` again gets you off at the next stop. Trains keep one timetable
+  on the real clock, so everyone playing online sees the same ones.
+- **Ride along** in a sky taxi, flick through street cameras, or just fly.
 - **Stay up late**: the clock runs from dusk to dawn, windows light up, street markets open on each district's main
   street, and every five minutes there are fireworks over the docks.
 - **Change the weather**: rain with thunder, snow that settles on the roofs, or fog.
@@ -52,7 +56,7 @@ about 90 kB of gzipped JavaScript.
 |---|---|
 | Click, then mouse | Look around (Esc frees the mouse) |
 | `W` `A` `S` `D` / arrows, `Shift` | Move, run |
-| `Enter` | Hail a taxi and get in the back; again to pay and get out |
+| `Enter` | Hail a taxi and get in the back; again to pay and get out. On a station platform: board the train, and again to get off |
 | `V` or `1`-`6` | Camera: walk, fly, street cameras, taxi, sky taxi, monorail |
 | `N` | Next camera or vehicle |
 | `E` / `Q` | Lift up / down, fly up / down, or change radio station in a cab |

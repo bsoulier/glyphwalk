@@ -3,10 +3,11 @@ import type { Input } from './input';
 import type { World } from '../world/world';
 import { KIND_TAXI, type Vehicle } from '../world/traffic';
 import { SEAT_FWD, SEAT_SIDE, SEAT_UP } from '../world/cabin';
-import { HOOD_BLOCKS, hoodAt } from '../world/hoods';
+import { hoodAt } from '../world/hoods';
 import { type Interior, inCab } from '../world/interior';
-import { EYE_H, P, RAIL_TOP } from '../world/layout';
-import { REGION, TRAIN_LEN } from '../world/train';
+import { EYE_H, P } from '../world/layout';
+import { PLAT_Y, STEP } from '../world/loop';
+import { RIDE_EYE, RIDE_SEAT, type TrainRef } from '../world/train';
 
 export const MODES = ['walk', 'fly', 'cctv', 'taxi', 'sky', 'rail'] as const;
 export type Mode = (typeof MODES)[number];
@@ -16,7 +17,7 @@ export const MODE_LABELS: Record<Mode, string> = {
   cctv: 'CCTV / street cams',
   taxi: 'TAXI / ride along',
   sky: 'SKY TAXI / ride along',
-  rail: 'MONORAIL / front seat',
+  rail: 'MONORAIL / loop line',
 };
 
 const EYE = EYE_H;
@@ -43,11 +44,13 @@ export class Player {
   private lookPitch = 0;
   private target = 0;
   private bob = 0;
-  /** District the current camera mode is tied to: cameras, rides and the shuttle all stay inside it. */
+  /** District the current camera mode is tied to: cameras and rides stay inside it. */
   private home = 0;
-  private railRi = 0;
-  private railRj = 0;
-  private railDir = 0;
+  /** The monorail train ridden in rail mode. */
+  train: TrainRef = { cx: 0, cz: 0, k: 0 };
+  /** Asked to get off: at the next station the rider steps out onto the platform. */
+  alightNext = false;
+  private boarding: TrainRef | null = null;
   readonly cctv = { x: 0, y: 8, z: 0, yaw: 0, pitch: -0.25, t: 0, id: 1 };
   /** Taxi meter, in dollars: the flag drop plus distance and waiting time. */
   fare = 0;
@@ -79,6 +82,8 @@ export class Player {
       this.yaw = cab.yaw;
       this.pitch = 0.02;
     }
+    // Leaving a train at a station puts you on its platform; between stations, down on the street.
+    const platform = this.mode === 'rail' && mode === 'walk' ? world.rail.alightAt(this.train) : null;
     this.leaveRide(world);
     this.mode = mode;
     this.home = this.hoodHere();
@@ -91,21 +96,34 @@ export class Player {
     }
     if (mode === 'sky') this.target = world.skyCars.hail(this.x, this.z, this.home);
     if (mode === 'rail') {
-      this.railRi = Math.floor(this.x / REGION);
-      this.railRj = Math.floor(Math.floor(this.z / P) / HOOD_BLOCKS);
-      this.railDir = 0;
+      this.train = this.boarding ?? world.rail.nearest(this.x, this.z);
+      this.boarding = null;
+      this.alightNext = false;
     }
     if (mode === 'walk') {
       this.floorY = 0;
       this.ride = null;
       this.y = EYE;
-      if (world.blocked(this.x, this.z, RADIUS)) {
+      if (platform) {
+        this.x = platform.x;
+        this.z = platform.z;
+        this.yaw = platform.yaw;
+        this.pitch = 0.02;
+        this.floorY = PLAT_Y;
+        this.y = PLAT_Y + EYE;
+      } else if (world.blocked(this.x, this.z, RADIUS)) {
         const rx = Math.round(this.x / P) * P, rz = Math.round(this.z / P) * P;
         if (Math.abs(this.x - rx) < Math.abs(this.z - rz)) this.x = rx + 3;
         else this.z = rz + 3;
       }
     }
     this.onCut?.();
+  }
+
+  /** Steps aboard a monorail train standing at the platform. */
+  board(ref: TrainRef, world: World): void {
+    this.boarding = ref;
+    this.setMode('rail', world);
   }
 
   /** On foot at street level, the player is someone cars stop for. */
@@ -239,13 +257,21 @@ export class Player {
           let mx = fX * fwd + rX * str, mz = fZ * fwd + rZ * str;
           len = Math.hypot(mx, mz);
           if (len > 1) { mx /= len; mz /= len; }
+          // Nothing to stand on here any more (a station moved, an old saved view): back down to the street.
+          if (world.surface(this.x, this.z, this.floorY) < 0 && this.floorY > STEP) this.floorY = 0;
           // A stall can go up around someone standing on its spot at dusk; let them walk out of it.
           const inStall = world.market.collides(this.x, this.z, RADIUS);
-          const hit = (x: number, z: number) => inStall ? world.city.collides(x, z, RADIUS, this.floorY) : world.blocked(x, z, RADIUS, this.floorY);
-          const nx = this.x + mx * sp;
-          if (!hit(nx, this.z)) this.x = nx;
-          const nz = this.z + mz * sp;
-          if (!hit(this.x, nz)) this.z = nz;
+          const hit = (x: number, z: number, feet: number) => inStall ? world.city.collides(x, z, RADIUS, feet) : world.blocked(x, z, RADIUS, feet);
+          // Stairs and platforms carry the feet up and down with them.
+          const step = (x: number, z: number) => {
+            const feet = world.surface(x, z, this.floorY);
+            if (feet < 0 || hit(x, z, feet)) return;
+            this.x = x;
+            this.z = z;
+            this.floorY = feet;
+          };
+          step(this.x + mx * sp, this.z);
+          step(this.x, this.z + mz * sp);
           if (len > 0) this.bob += sp * 1.9;
         }
         this.y = this.floorY + EYE + Math.sin(this.bob) * (len > 0 ? 0.035 : 0);
@@ -281,16 +307,12 @@ export class Player {
       cam.yaw = c.yaw + Math.sin(c.t * 0.32) * 0.3 + this.lookYaw;
       cam.pitch = c.pitch + this.lookPitch;
     } else if (this.mode === 'rail') {
-      const s = world.rail.shuttle(this.railRi, this.railRj);
-      // At each terminus the driver changes ends, so the view cuts to the other cab.
-      if (s.dir !== this.railDir) {
-        if (this.railDir !== 0) this.onCut?.();
-        this.railDir = s.dir;
-      }
-      cam.x = s.x + s.dir * (TRAIN_LEN / 2 - 1.5);
-      cam.y = RAIL_TOP + 2.1;
-      cam.z = s.z;
-      cam.yaw = (s.dir * Math.PI) / 2 + this.lookYaw;
+      // At the very front of the leading car, looking out of the front window; the head turns freely.
+      const p = world.rail.car(this.train, 0);
+      cam.x = p.x + Math.sin(p.yaw) * RIDE_SEAT;
+      cam.y = RIDE_EYE;
+      cam.z = p.z + Math.cos(p.yaw) * RIDE_SEAT;
+      cam.yaw = p.yaw + this.lookYaw;
       cam.pitch = this.lookPitch - 0.05;
     } else {
       const v = this.riding(world);

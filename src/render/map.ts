@@ -1,10 +1,10 @@
 import type { FrameBuffer } from './framebuffer';
 import type { World } from '../world/world';
 import { glyph } from '../core/charset';
-import { HOODS, HOOD_BLOCKS, H_DOCKS, H_DOWNTOWN, H_JAPAN, hoodAt, hoodOfRegion, isBeach } from '../world/hoods';
+import { HOODS, HOOD_BLOCKS, H_DOCKS, H_DOWNTOWN, H_JAPAN, REGION, hoodAt, hoodOfRegion, isBeach } from '../world/hoods';
 import { HALF, KIND_CITY, KIND_PARK, LOT_EDGE, P, ROAD_HALF, blockKind, hasPond } from '../world/layout';
+import { CARS, CAR_LEN, TRAINS, carPoint, cellOf, onLoopLine, stationsOf, trainState } from '../world/loop';
 import { KIND_POLICE, KIND_TAXI } from '../world/traffic';
-import { REGION, TRAIN_LEN, isRailRow, railZ } from '../world/train';
 
 /** A map panel on the character grid. The rectangle includes its one-cell border. */
 export interface MapView {
@@ -34,6 +34,7 @@ const G_o = glyph('o');
 const G_STAR = glyph('*');
 const G_AT = glyph('@');
 const G_E = glyph('E');
+const G_S = glyph('S');
 const G_DARK = glyph('▓');
 const G_FULL = glyph('█');
 const ARROWS = ['^', '/', '>', '\\', 'v', '/', '<', '\\'].map((c) => glyph(c));
@@ -127,7 +128,6 @@ function terrain(v: MapView, n: Inner): void {
     const lz = Z - bj * P;
     const az = Math.abs(lz < HALF ? lz : lz - P);
     const onZ = az < hz;
-    const rail = onZ && isRailRow(Math.round(Z / P));
     for (let c = 0; c < n.w; c++) {
       const X = v.cx + (c + 0.5 - n.w / 2) * v.mpc;
       const bi = Math.floor(X / P);
@@ -136,7 +136,7 @@ function terrain(v: MapView, n: Inner): void {
       const onX = ax < hx;
       const col = n.c0 + c, row = n.r0 + r;
       if (onX || onZ) {
-        if (rail && !onX) set(col, row, G_EQ, 150, 162, 190, 22, 22, 30);
+        if (onLoopLine(X, Z, Math.max(hx, hz))) set(col, row, onX && onZ ? G_PLUS : onX ? G_PIPE : G_EQ, 235, 110, 96, 44, 16, 16);
         else set(col, row, onX && onZ ? G_PLUS : onX ? G_PIPE : G_DASH, 105, 105, 118, 16, 16, 22);
         continue;
       }
@@ -185,17 +185,29 @@ function labels(v: MapView, n: Inner): void {
   }
 }
 
+const trainScratch = { s: 0, at: -1, next: 0, left: 0, trip: 0 };
+const pointScratch = { x: 0, z: 0, yaw: 0 };
+
+/** Stations as S on the loop lines, and every train as a short run of #. */
 function shuttles(world: World, v: MapView, n: Inner): void {
   const halfW = (n.w / 2) * v.mpc, halfH = (n.h / 2) * n.mpr;
-  const ri0 = Math.floor((v.cx - halfW) / REGION), ri1 = Math.floor((v.cx + halfW) / REGION);
-  const rj0 = Math.floor((v.cz - halfH) / REGION) - 1, rj1 = Math.floor((v.cz + halfH) / REGION) + 1;
-  for (let rj = rj0; rj <= rj1; rj++) {
-    if (Math.abs(railZ(rj) - v.cz) > halfH) continue;
-    for (let ri = ri0; ri <= ri1; ri++) {
-      const s = world.rail.shuttle(ri, rj);
-      for (let x = s.x - TRAIN_LEN / 2; x <= s.x + TRAIN_LEN / 2; x += v.mpc) {
-        const cell = toCell(v, n, x, s.z);
-        if (cell) mark(cell[0], cell[1], G_HASH, 235, 240, 250);
+  for (let cx = cellOf(v.cx - halfW); cx <= cellOf(v.cx + halfW); cx++) {
+    for (let cz = cellOf(v.cz - halfH); cz <= cellOf(v.cz + halfH); cz++) {
+      if (v.mpc < 12) {
+        for (const st of stationsOf(cx, cz)) {
+          const cell = toCell(v, n, st.x, st.z);
+          if (cell) mark(cell[0], cell[1], G_S, 255, 255, 255);
+        }
+      }
+      for (let k = 0; k < TRAINS; k++) {
+        trainState(cx, cz, k, world.rail.time, trainScratch);
+        for (let m = 0; m < CARS; m++) {
+          for (let f = -CAR_LEN / 2; f <= CAR_LEN / 2; f += Math.max(1, v.mpc)) {
+            carPoint(cx, cz, trainScratch.s + f, m, pointScratch);
+            const cell = toCell(v, n, pointScratch.x, pointScratch.z);
+            if (cell) mark(cell[0], cell[1], G_HASH, 235, 240, 250);
+          }
+        }
       }
     }
   }
@@ -260,6 +272,6 @@ function frame(v: MapView): void {
     text(c + 2, y1, ` ${h.name} `, FRAME, FRAME_BG);
     c += h.name.length + 5;
   }
-  const key = ' o car  o taxi  # monorail  E entrance  @ you ';
+  const key = ' o car  o taxi  # monorail  S station  E entrance  @ you ';
   if (c + key.length < x1) text(c, y1, key, FRAME, FRAME_BG);
 }

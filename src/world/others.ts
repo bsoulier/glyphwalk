@@ -2,7 +2,8 @@ import type { Camera } from '../render/camera';
 import { drawBoxYaw, drawLabel, drawPoint, drawVLine, sphereVisible, stats } from '../render/raster';
 import { M_CLOTH, M_SKIN } from '../render/materials';
 import { glyph } from '../core/charset';
-import { ACT_CHEER, ACT_SPIN, ACT_WAVE, EMOTES, MODE_FLY, MODE_SKY, MODE_TAXI, MODE_WALK } from '../net/protocol';
+import { ACT_CHEER, ACT_SPIN, ACT_WAVE, EMOTES, MODE_FLY, MODE_RAIL, MODE_SKY, MODE_TAXI, MODE_WALK } from '../net/protocol';
+import { RAIL_TOP } from './layout';
 import type { RGB } from './signs';
 import { SKINS } from './pedestrians';
 import { KIND_SKY, KIND_TAXI, Vehicle, drawCar, drawSkyCar } from './traffic';
@@ -85,10 +86,12 @@ export function drawOthers(cam: Camera, list: readonly OtherPlayer[], time: numb
  */
 export function drawOtherTags(cam: Camera, list: readonly OtherPlayer[]): void {
   for (const p of list) {
-    if (!shown(p)) continue;
+    // Monorail riders sit inside a train that every player sees in the same place: their tag rides on its roof.
+    const rail = p.mode === MODE_RAIL;
+    if (!shown(p) && !rail) continue;
     const d = Math.hypot(p.x - cam.x, p.y - cam.y, p.z - cam.z);
     if (d > EMOTE_R) continue;
-    const tagY = p.mode === MODE_TAXI ? 2.4 : p.mode === MODE_SKY ? p.y + 1.5 : p.y + 2.15;
+    const tagY = rail ? RAIL_TOP + 3.3 : p.mode === MODE_TAXI ? 2.4 : p.mode === MODE_SKY ? p.y + 1.5 : p.y + 2.15;
     const [r, g, b] = p.color;
     if (d < TAG_R) drawLabel(p.x, tagY, p.z, glyphsOf(p.name), 0, r, g, b);
     if (p.emote >= 0 && p.emoteAge < EMOTE_S) {

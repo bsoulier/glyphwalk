@@ -5,8 +5,9 @@ import { Fireworks } from './fireworks';
 import { Market } from './market';
 import { Pedestrians } from './pedestrians';
 import { drawSignals } from './signals';
+import { STEP, stationFloor } from './loop';
 import { Traffic, type Vehicle, type Walker } from './traffic';
-import { Rail } from './train';
+import { Rail, type TrainRef } from './train';
 
 export class World {
   readonly city = new City();
@@ -35,14 +36,25 @@ export class World {
     return this.city.collides(x, z, r, feet) || (feet < 0.5 && this.market.collides(x, z, r));
   }
 
-  /** `hidden` is the vehicle the camera sits in, when its body would just block the view. */
-  drawActors(cam: Camera, time: number, rain: boolean, hidden: Vehicle | null): void {
+  /**
+   * What someone on foot with feet at `feet` would stand on at (x, z): station stairs and platforms,
+   * the floor they are on inside a building, or the street; -1 where they cannot step (off a platform).
+   */
+  surface(x: number, z: number, feet: number): number {
+    const h = stationFloor(x, z, feet);
+    if (!Number.isNaN(h)) return h;
+    if (this.city.interiorAt(x, z)) return feet;
+    return feet <= STEP ? 0 : -1;
+  }
+
+  /** `hidden` is the vehicle the camera sits in, when its body would just block the view; `train` the one it rides. */
+  drawActors(cam: Camera, time: number, rain: boolean, hidden: Vehicle | null, train: TrainRef | null): void {
     this.cars.draw(cam, time, Math.min(cam.far, 240), hidden);
     this.skyCars.draw(cam, time, cam.far, hidden);
     this.peds.draw(cam, rain);
     this.cats.draw(cam, time);
     this.market.draw(cam, time);
-    this.rail.draw(cam);
+    this.rail.draw(cam, time, train);
     drawSignals(cam, this.time);
   }
 }

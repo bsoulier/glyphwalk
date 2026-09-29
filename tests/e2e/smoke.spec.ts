@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { PLAT_Y, stationsOf, trainAt } from '../../src/world/loop';
 
 /** Collects uncaught errors and console errors so every test can assert the page stayed clean. */
 function watchErrors(page: Page): string[] {
@@ -96,6 +97,26 @@ test('Enter hails a taxi, rides in the back and gets out on the sidewalk', async
   await page.keyboard.press('Enter');
   await expect.poll(() => stat(page, 'MODE')).toContain('WALK');
   await expect(page.locator('#toast')).toContainText('Paid $');
+  expect(errors).toEqual([]);
+});
+
+test('boards the monorail from a platform and steps off again, minding the gap', async ({ page }) => {
+  const errors = watchErrors(page);
+  // Trains run on the wall clock: hold it a few seconds after one pulls in at MAPLE HEIGHTS GATE.
+  let t = Math.floor(Date.now() / 1000);
+  while (trainAt(0, 0, 4, t) < 0) t++;
+  await page.clock.setFixedTime(new Date((t + 2) * 1000));
+  const st = stationsOf(0, 0)[4];
+  await page.goto(`./?mode=walk&cam=${st.x + st.nx * 2.5},13.9,${st.z + st.nz * 2.5},0,0&floor=${PLAT_Y}&time=day`);
+  await expect(page.locator('#prompt')).toContainText('ENTER board the train');
+  await page.keyboard.press('Enter');
+  await expect.poll(() => stat(page, 'MODE')).toContain('MONORAIL');
+  await expect(page.locator('#osd')).toContainText(st.name);
+  await expect(page.locator('#prompt')).toContainText('ENTER get off');
+  await page.keyboard.press('Enter');
+  await expect.poll(() => stat(page, 'MODE')).toContain('WALK');
+  await expect(page.locator('#toast')).toContainText('Mind the gap');
+  await expect(page.locator('#prompt')).toContainText('ENTER board the train');
   expect(errors).toEqual([]);
 });
 

@@ -10,6 +10,7 @@ import { FACE_STRIDE } from '../world/faces';
 import { type Interior, drawInterior } from '../world/interior';
 import { type Cab, drawCabin } from '../world/cabin';
 import { type OtherPlayer, drawOtherTags, drawOthers } from '../world/others';
+import type { TrainRef } from '../world/train';
 import { isLandmark } from '../world/layout';
 import { drawBackground } from './background';
 import type { Daylight } from './daylight';
@@ -32,6 +33,8 @@ export interface FrameEnv {
   sky: Daylight;
   /** Other players in sight, when playing online. */
   others: readonly OtherPlayer[];
+  /** The monorail train the camera rides in; its cars are drawn from the inside. */
+  train: TrainRef | null;
 }
 
 const G_STAR = glyph('*');
@@ -63,22 +66,25 @@ export function renderScene(fb: FrameBuffer, cam: Camera, world: World, env: Fra
     if (it) indoors = it;
   }
   if (env.weather !== 'fog') drawLandmark(fb, cam, world, env, blocks);
-  world.drawActors(cam, env.time, env.weather === 'rain', env.hidden);
+  world.drawActors(cam, env.time, env.weather === 'rain', env.hidden, env.train);
   if (env.others.length > 0) drawOthers(cam, env.others, env.time);
-  if (env.cab) {
+  if (env.cab || env.train) {
     setSnowCover(0);
-    drawCabin(env.cab, cam, env.time);
+    if (env.cab) drawCabin(env.cab, cam, env.time);
+    if (env.train) world.rail.drawRide(cam, env.train, env.time);
     setSnowCover(snowCover);
   }
   drawBackground(fb, cam, { ...env, glow: world.fireworks.glow });
   world.fireworks.draw(fb, cam, env.weather === 'fog' ? FOG_DENSITY : 0);
   if (env.others.length > 0) drawOtherTags(cam, env.others);
   // Indoors, only drops beyond the far wall can be outside; nearer ones would fall in the room (or the cab).
-  if (rain.on) rain.draw(fb, indoors ? farCorner(indoors, cam) : env.cab ? CAB_REACH : 0);
+  if (rain.on) rain.draw(fb, indoors ? farCorner(indoors, cam) : env.cab ? CAB_REACH : env.train ? CAR_REACH : 0);
 }
 
 /** From the back seat, anything nearer than this is inside the car. */
 const CAB_REACH = 1.6;
+/** From the front of a monorail car, the same for rain. */
+const CAR_REACH = 1.5;
 
 /** How far away the Glyph Tower still shows over the city, as a hazy silhouette with its beacons. */
 const LANDMARK_RANGE = 2600;

@@ -3,7 +3,7 @@ import { sphereVisible } from '../render/raster';
 import { M_RAIL } from '../render/materials';
 import { hash3, mulberry32 } from '../core/hash';
 import { type Builder, type Rect, streetLamps } from './build';
-import { BOX_N, BOX_S, BOX_SIDES, BOX_BOTTOM, BOX_TOP, FaceList } from './faces';
+import { BOX_E, BOX_N, BOX_S, BOX_SIDES, BOX_BOTTOM, BOX_TOP, BOX_W, FaceList } from './faces';
 import {
   HOODS, H_DOCKS, H_DOWNTOWN, H_ESTATES, H_JAPAN, H_MEDINA, H_OLDTOWN, H_PARIS, H_SEAFRONT, H_SUBURB, hoodAt,
 } from './hoods';
@@ -18,7 +18,7 @@ import { buildEstates } from './styles/estates';
 import { buildSeafront } from './styles/seafront';
 import { buildMedina } from './styles/medina';
 import type { Interior } from './interior';
-import { isRailRow } from './train';
+import { CURVE_R, LOOP_BLOCKS, LOOP_IN } from './loop';
 
 /** x, y0, y1, z, halfWidth, r, g, b, glyph, material */
 export const POLE_STRIDE = 10;
@@ -195,7 +195,7 @@ export function generateBlock(i: number, j: number): Block {
     default: buildDowntown(B, i, j, kind, lot);
   }
   streetLamps(B, bx, bz, HOODS[hood]);
-  if (isRailRow(j)) addMonorail(B, bx, bz);
+  addMonorail(B, i, j, bx, bz);
 
   const half = P / 2;
   return {
@@ -216,12 +216,52 @@ export function generateBlock(i: number, j: number): Block {
   };
 }
 
-/** Beam over the centre line of the road along the block's south edge, on two pillars. */
-function addMonorail(B: Builder, bx: number, bz: number): void {
-  B.faces.box(bx, RAIL_Y, bz - 1.2, bx + P, RAIL_Y + 1.2, bz + 1.2, M_RAIL, 96, 102, 116, 0, M_RAIL, BOX_S | BOX_N | BOX_TOP | BOX_BOTTOM);
-  for (const px of [bx + 16, bx + 48]) {
-    B.faces.box(px - 0.6, 0, bz - 0.6, px + 0.6, RAIL_Y, bz + 0.6, M_RAIL, 80, 84, 96, 0, M_RAIL, BOX_SIDES);
-    B.colliders.push(px - 0.6, bz - 0.6, px + 0.6, bz + 0.6);
+const BEAM_W = 1.2;
+
+function pillar(B: Builder, x: number, z: number): void {
+  B.faces.box(x - 0.6, 0, z - 0.6, x + 0.6, RAIL_Y, z + 0.6, M_RAIL, 80, 84, 96, 0, M_RAIL, BOX_SIDES);
+  B.colliders.push(x - 0.6, z - 0.6, x + 0.6, z + 0.6);
+}
+
+/** Quarter circle of beam round (cx, cz), from angle t0 to t1, in short straight pieces. */
+function arcBeam(B: Builder, cx: number, cz: number, t0: number, t1: number): void {
+  const n = 8, ri = CURVE_R - BEAM_W, ro = CURVE_R + BEAM_W, y0 = RAIL_Y, y1 = RAIL_Y + BEAM_W;
+  for (let k = 0; k < n; k++) {
+    const a = t0 + ((t1 - t0) * k) / n, b = t0 + ((t1 - t0) * (k + 1)) / n;
+    const oax = cx + ro * Math.cos(a), oaz = cz + ro * Math.sin(a), obx = cx + ro * Math.cos(b), obz = cz + ro * Math.sin(b);
+    const iax = cx + ri * Math.cos(a), iaz = cz + ri * Math.sin(a), ibx = cx + ri * Math.cos(b), ibz = cz + ri * Math.sin(b);
+    B.faces.wall(oax, oaz, obx, obz, y0, y1, y0, M_RAIL, 96, 102, 116, 0);
+    B.faces.wall(ibx, ibz, iax, iaz, y0, y1, y0, M_RAIL, 96, 102, 116, 0);
+    B.faces.poly(iax, y1, iaz, oax, y1, oaz, obx, y1, obz, ibx, y1, ibz, 0, 0, 2, 0, 2, 2, 0, 2, M_RAIL, 96, 102, 116, 0);
+    B.faces.poly(ibx, y0, ibz, obx, y0, obz, oax, y0, oaz, iax, y0, iaz, 0, 0, 2, 0, 2, 2, 0, 2, M_RAIL, 96, 102, 116, 0);
   }
-  B.maxH = Math.max(B.maxH, RAIL_Y + 2);
+}
+
+/**
+ * The monorail loops (world/loop.ts) run over the roads one block inside each cell's edge. A block carries
+ * the stretch along its south and west edges, and the curve if it sits inside a corner of its loop.
+ */
+function addMonorail(B: Builder, i: number, j: number, bx: number, bz: number): void {
+  const li = ((i % LOOP_BLOCKS) + LOOP_BLOCKS) % LOOP_BLOCKS, lj = ((j % LOOP_BLOCKS) + LOOP_BLOCKS) % LOOP_BLOCKS;
+  const lo = LOOP_IN, hi = LOOP_BLOCKS - LOOP_IN;
+  let any = false;
+  if ((lj === lo || lj === hi) && li >= lo && li < hi) {
+    const x0 = li === lo ? bx + CURVE_R : bx, x1 = li === hi - 1 ? bx + P - CURVE_R : bx + P;
+    B.faces.box(x0, RAIL_Y, bz - BEAM_W, x1, RAIL_Y + BEAM_W, bz + BEAM_W, M_RAIL, 96, 102, 116, 0, M_RAIL, BOX_S | BOX_N | BOX_TOP | BOX_BOTTOM);
+    for (const px of [bx + 16, bx + 48]) if (px >= x0 && px <= x1) pillar(B, px, bz);
+    any = true;
+  }
+  if ((li === lo || li === hi) && lj >= lo && lj < hi) {
+    const z0 = lj === lo ? bz + CURVE_R : bz, z1 = lj === hi - 1 ? bz + P - CURVE_R : bz + P;
+    B.faces.box(bx - BEAM_W, RAIL_Y, z0, bx + BEAM_W, RAIL_Y + BEAM_W, z1, M_RAIL, 96, 102, 116, 0, M_RAIL, BOX_E | BOX_W | BOX_TOP | BOX_BOTTOM);
+    for (const pz of [bz + 16, bz + 48]) if (pz >= z0 && pz <= z1) pillar(B, bx, pz);
+    any = true;
+  }
+  const east = li === hi - 1, west = li === lo, south = lj === lo, north = lj === hi - 1;
+  const R = CURVE_R, Q = Math.PI / 2;
+  if (west && south) arcBeam(B, bx + R, bz + R, 2 * Q, 3 * Q);
+  if (east && south) arcBeam(B, bx + P - R, bz + R, 3 * Q, 4 * Q);
+  if (east && north) arcBeam(B, bx + P - R, bz + P - R, 0, Q);
+  if (west && north) arcBeam(B, bx + R, bz + P - R, Q, 2 * Q);
+  if (any || ((west || east) && (south || north))) B.maxH = Math.max(B.maxH, RAIL_Y + 2);
 }

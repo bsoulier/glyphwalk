@@ -31,6 +31,8 @@ export interface SoundState {
   /** How often neon signs fail: 'always' buzzes and snaps at random, 'periodic' only in the brownout. */
   events: EventMode;
   brownout: boolean;
+  /** Riding a monorail train that stands at a station. */
+  stopped: boolean;
 }
 
 interface Voice {
@@ -363,6 +365,16 @@ export class Sound {
     o.stop(t0 + 0.75);
   }
 
+  /** Monorail doors: a two-note chime (rising to open, falling to close) and a hiss of air. */
+  trainDoors(open: boolean, aboard: boolean): void {
+    if (!this.ctx) return;
+    const out = aboard ? this.inside('traffic') : this.outside('traffic');
+    const [a, b] = open ? [659, 880] : [880, 659];
+    this.tone(a, 0.5, 0.1, out);
+    this.tone(b, 0.8, 0.09, out, { delay: 0.32 });
+    this.burst('highpass', 2200, 0.6, 0.6, 0.06, out, 0.15);
+  }
+
   /** Short rising blip, for finding things. */
   chime(): void {
     if (!this.ctx) return;
@@ -655,8 +667,8 @@ export class Sound {
   /** Riding along: clacking monorail bogies, or the hum of a taxi. */
   private ride(s: SoundState): void {
     const riding = s.mode === 'rail' || s.mode === 'taxi' || s.mode === 'sky';
-    this.level(this.rumble, riding ? (s.mode === 'sky' ? 0.12 : 0.25) : 0);
-    if (s.mode === 'rail' && this.every('clack', 0.55, 0.6)) {
+    this.level(this.rumble, riding ? (s.mode === 'sky' ? 0.12 : s.stopped ? 0.06 : 0.25) : 0);
+    if (s.mode === 'rail' && !s.stopped && this.every('clack', 0.55, 0.6)) {
       this.burst('lowpass', 1400, 1, 0.05, 0.25, this.inside('traffic'));
       this.burst('lowpass', 1200, 1, 0.05, 0.2, this.inside('traffic'), 0.14);
     }

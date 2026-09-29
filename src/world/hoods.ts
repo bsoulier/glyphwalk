@@ -1,9 +1,11 @@
 import { hash3 } from '../core/hash';
 import type { RGB } from './signs';
-import { worldSeed } from './layout';
+import { P, worldSeed } from './layout';
 
 /** Neighbourhoods tile the grid in square regions of this many blocks, so borders run along streets. */
 export const HOOD_BLOCKS = 4;
+/** Width of one district region, in metres. */
+export const REGION = HOOD_BLOCKS * P;
 
 export const H_DOWNTOWN = 0;
 export const H_JAPAN = 1;

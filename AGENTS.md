@@ -27,7 +27,7 @@ changes under `server/` or `src/net/`, also `cd server && npm run typecheck`.
 |---|---|
 | `src/main.ts` | Wiring: settings, input, main loop, HUD, photo/GIF, sharing, tour, resume. The only file that knows about everything. |
 | `src/render/` | Frame buffer, camera, rasterizer (`raster.ts`), per-material shading (`materials.ts`, `facades.ts`, `interiors.ts`), ground and sky (`ground.ts`, `background.ts`), lighting and fog (`surface.ts`, `daylight.ts`), presenters (`presenter.ts`), rain and snow. |
-| `src/world/` | City generation (`city.ts`, `build.ts`, `styles/*` per district, the Glyph Tower in `styles/downtown.ts`), districts (`hoods.ts`), interiors and furniture, traffic and the taxi cabin you ride in (`cabin.ts`), pedestrians, signals, monorail, cats, night market, fireworks, event schedule (`events.ts`). |
+| `src/world/` | City generation (`city.ts`, `build.ts`, `styles/*` per district, the Glyph Tower in `styles/downtown.ts`), districts (`hoods.ts`), interiors and furniture, traffic and the taxi cabin you ride in (`cabin.ts`), pedestrians, signals, the monorail (`loop.ts` for lines, stations, timetable and stairs; `train.ts` draws trains, stations and the car you ride in), cats, night market, fireworks, event schedule (`events.ts`). |
 | `src/audio/` | `sound.ts` (all ambience and effects) and `radio.ts` (generated music), Web Audio only. |
 | `src/game/` | Player and camera modes, keyboard/mouse input, touch controls, auto tour. |
 | `src/ui/` | HUD panel, settings persistence, quality ladder, photo mode, GIF encoder, share links, resume, PWA install, toasts, usage counts (`analytics.ts`). |
@@ -66,6 +66,12 @@ glow (lamps, signs, windows at night).
  in the same place. Add a new district to the second set (or a new set with its own roll), never by changing the
  first five's weights. The Seafront's northern row of blocks is beach (`isBeach`); the Glyph Tower's block is
  `LANDMARK_I`, `LANDMARK_J` in `world/layout.ts`.
+- **Monorail.** The city is tiled with cells of `LOOP_BLOCKS` blocks, each with one loop line one block inside its
+ edge (`world/loop.ts`); blocks draw the beams along their edges (`addMonorail` in `city.ts`), and stations sit
+ mid-block over the road, with the stairs on the gutter so pedestrians and cars pass beside them. Trains follow one
+ timetable on the wall clock (`Rail.time`), so every player sees them in the same place: keep train positions a pure
+ function of the cell, the train and the time. Walkers climb stairs and stand on platforms through `World.surface`;
+ anything else raised that people walk on outdoors belongs there too.
 - **Facade seeds** hold the facade kind in bits 18-21 (`facadeOf`), so there is room for 16 kinds.
 - **Sign seeds** live in `Float32Array` face data, so they must stay below 2^24 (see `signSeed` in `world/signs.ts`).
   Add new sign texts only at the end of `SIGN_TEXTS`, and only with characters that exist in `world/font.ts`; a unit

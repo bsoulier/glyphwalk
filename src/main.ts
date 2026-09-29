@@ -41,6 +41,8 @@ import { loadOnlineId, newOnlineId, saveOnlineId } from './net/identity';
 import { playerName } from './net/names';
 import { EMOTES, type PlayerState } from './net/protocol';
 import type { OtherPlayer } from './world/others';
+import { STATIONS as LOOP_STOPS, type Station, nextTrain, stairsNear, stationsOf } from './world/loop';
+import type { TrainRef } from './world/train';
 
 const params = new URLSearchParams(location.search);
 setWorldSeed(Number(params.get('seed')) || 1337);
@@ -547,11 +549,74 @@ function touchContext(): TouchButton[] {
   const emote: TouchButton[] = online && settings.online && online.count > 0 ? [{ label: 'EMOTE', code: 'KeyZ' }] : [];
   if (player.mode === 'fly') return [{ label: 'RISE', code: 'KeyE', hold: true }, { label: 'SINK', code: 'KeyQ', hold: true }, ...emote];
   if (player.mode === 'taxi') return [{ label: 'RADIO', code: 'KeyE' }, { label: 'GET OUT', code: 'Enter' }, ...emote];
+  if (player.mode === 'rail') return [{ label: 'GET OFF', code: 'Enter' }, ...emote];
   if (riding()) return [{ label: 'RADIO', code: 'KeyE' }, ...emote];
   const it = player.inside(world);
   if (it && !player.liftMoving && inCab(it, player.x, player.z)) return [{ label: 'LIFT UP', code: 'KeyE' }, { label: 'LIFT DN', code: 'KeyQ' }, ...emote];
-  if (player.mode === 'walk' && !it) return [{ label: 'TAXI', code: 'Enter' }, ...emote];
+  const st = platform();
+  if (st) return world.rail.standing(st) ? [{ label: 'BOARD', code: 'Enter' }, ...emote] : emote;
+  if (player.mode === 'walk' && !it && player.floorY < 0.5) return [{ label: 'TAXI', code: 'Enter' }, ...emote];
   return emote;
+}
+
+// ---- the monorail ----
+
+/** The station platform the player stands on, if any. */
+function platform(): Station | null {
+  return player.mode === 'walk' ? world.rail.platformAt(player.x, player.z, player.floorY) : null;
+}
+
+function stopName(ref: TrainRef, n: number): string {
+  return stationsOf(ref.cx, ref.cz)[n].name;
+}
+
+function boardTrain(st: Station): void {
+  const ref = world.rail.standing(st);
+  if (!ref) {
+    toast(`The next train is due in ${Math.ceil(nextTrain(st.cx, st.cz, st.n, world.rail.time))} s`, 2000);
+    return;
+  }
+  player.board(ref, world);
+  toast(`All aboard! Next stop: ${stopName(ref, (st.n + 1) % LOOP_STOPS)}`, 2500);
+  trackEvent('monorail');
+}
+
+/** Steps off at the station the train stands at. */
+function alight(): void {
+  const t = world.rail.train(player.train);
+  if (t.at < 0) return;
+  const name = stopName(player.train, t.at);
+  player.setMode('walk', world);
+  toast(`${name}. Mind the gap!`, 2500);
+}
+
+/** Enter while riding: off now if the doors are open, else at the next station (again to stay on). */
+function leaveTrain(): void {
+  const t = world.rail.train(player.train);
+  if (t.at >= 0) {
+    alight();
+    return;
+  }
+  player.alightNext = !player.alightNext;
+  toast(player.alightNext ? `Getting off at ${stopName(player.train, t.next)}` : 'Staying on board', 1800);
+}
+
+let doorsOpen = false;
+
+/** Gets off when asked to at the station the train pulls into, and chimes the doors of the train at hand. */
+function railFrame(): void {
+  let open = false;
+  if (player.mode === 'rail') {
+    open = world.rail.train(player.train).at >= 0;
+    if (open && player.alightNext) alight();
+  } else {
+    const st = platform();
+    open = st !== null && world.rail.standing(st) !== null;
+  }
+  if (open !== doorsOpen) {
+    doorsOpen = open;
+    sound.trainDoors(open, player.mode === 'rail');
+  }
 }
 
 const MOVE_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
@@ -584,9 +649,18 @@ function prompts(): Prompt[] {
         }
         break;
       }
+      const st = platform();
+      if (st) {
+        if (world.rail.standing(st)) {
+          if (keys) p.push(['ENTER', 'board the train']);
+        } else p.push(['', `${st.name}: next train in ${Math.ceil(nextTrain(st.cx, st.cz, st.n, world.rail.time))} s`]);
+        break;
+      }
+      if (player.floorY > 0.5) break;
       if (keys && !hasMoved) p.push(['WASD', 'move']);
       const door = world.city.doorNear(player.x, player.z, 4);
       if (door) p.push(['', `walk in: ${door.label}`]);
+      if (stairsNear(player.x, player.z, 7)) p.push(['', 'stairs up to the monorail']);
       if (keys) p.push(['ENTER', 'taxi']);
       if (keys && !hasMoved) p.push(['V', 'camera modes']);
       break;
@@ -603,9 +677,12 @@ function prompts(): Prompt[] {
     case 'cctv':
       if (keys) p.push(['N', 'next camera'], ['1', 'walk']);
       break;
-    case 'rail':
-      if (keys) p.push(['1', 'walk']);
+    case 'rail': {
+      const t = world.rail.train(player.train);
+      if (player.alightNext) p.push(['', `getting off at ${stopName(player.train, t.next)}`]);
+      else if (keys) p.push(['ENTER', t.at >= 0 ? 'get off' : `get off at ${stopName(player.train, t.next)}`]);
       break;
+    }
   }
   if (keys && online && settings.online && online.count > 0 && player.mode !== 'cctv') p.push(['Z', 'emote']);
   if (keys && !settings.hud) p.push(['H', 'menu']);
@@ -662,10 +739,15 @@ function handleKeys(): void {
         else if (player.mode === 'taxi') {
           toast(`Paid $${player.fare.toFixed(2)}. Thanks, have a good one!`, 2500);
           player.setMode('walk', world);
-        } else if (player.mode === 'walk' && !player.inside(world)) {
-          player.setMode('taxi', world);
-          toast("Taxi! You're in the back seat.", 2500);
-          trackEvent('taxi');
+        } else if (player.mode === 'rail') leaveTrain();
+        else if (player.mode === 'walk' && !player.inside(world)) {
+          const st = platform();
+          if (st) boardTrain(st);
+          else if (player.floorY < 0.5) {
+            player.setMode('taxi', world);
+            toast("Taxi! You're in the back seat.", 2500);
+            trackEvent('taxi');
+          }
         }
         break;
       case 'KeyC': if (photo.active) photo.copyText(fb); break;
@@ -799,7 +881,10 @@ function updateHud(): void {
     const fare = player.mode === 'taxi' ? `\nFARE $${player.fare.toFixed(2)}` : '';
     osd = `${MODE_LABELS[player.mode]}\n${district} loop\n${radio}${fare}`;
   } else if (player.mode === 'rail') {
-    osd = `${MODE_LABELS[player.mode]}\n${district} shuttle`;
+    const t = world.rail.train(player.train);
+    osd = t.at >= 0
+      ? `${MODE_LABELS.rail}\n${stopName(player.train, t.at)}\ndoors open`
+      : `${MODE_LABELS.rail}\nNEXT  ${stopName(player.train, t.next)}  ${Math.ceil(t.left)} s`;
   } else if (indoors) {
     const lv = levelAt(indoors, player.floorY);
     const lift = player.liftMoving ? `\nLIFT moving...  ${Math.round(player.floorY)} m` : '';
@@ -831,6 +916,7 @@ function soundFrame(dt: number): void {
     market: world.market.nearest(cam.x, cam.z),
     events: settings.events,
     brownout: brownoutAt(settings.events, world.time),
+    stopped: player.mode === 'rail' && world.rail.train(player.train).at >= 0,
   });
 }
 
@@ -981,6 +1067,7 @@ function frame(now: number): void {
   }
   soundFrame(dt);
   if (!photo.active) catFrame(dt);
+  railFrame();
   flash = Math.max(0, flash - dt * 2.5);
   const flicker = flash > 0.55 && flash < 0.75 ? 0.2 : flash;
 
@@ -998,6 +1085,7 @@ function frame(now: number): void {
     liftDoors: player.liftDoors,
     sky,
     others: onlineFrame(dt, photo.active && !gif.active),
+    train: player.mode === 'rail' ? player.train : null,
   };
   renderScene(fb, cam, world, env, rain);
   if (staticT > 0) {

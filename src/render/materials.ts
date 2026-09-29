@@ -82,7 +82,7 @@ export function shade(
     case M_LEAF: leaf(i, u, v, z, r, g, b, sh, seed); break;
     case M_TRUNK: put(i, G_PIPE, r * sh, g * sh, b * sh, 0.3, z, 0); break;
     case M_RAIL: put(i, G_EQ, r * sh, g * sh, b * sh, 0.3, z, 0); break;
-    case M_TRAIN: train(i, u, v, z, r, g, b, sh); break;
+    case M_TRAIN: train(i, u, v, z, r, g, b, sh, seed); break;
     case M_CONCRETE: put(i, G_COLON, r * sh, g * sh, b * sh, 0.28, z, 0); break;
     case M_GLOW: put(i, G_FULL, r, g, b, 0.6, z, 1); break;
     case M_WATER: water(i, u, v, z); break;
@@ -125,13 +125,17 @@ function leaf(i: number, u: number, v: number, z: number, r: number, g: number, 
   put(i, gl, r * q, g * q, b * q, 0.35, z, 0);
 }
 
-function train(i: number, u: number, v: number, z: number, r: number, g: number, b: number, sh: number): void {
+/** Car sides: a band of lit windows, with the heads and shoulders of passengers (chosen by `seed`) in some. */
+function train(i: number, u: number, v: number, z: number, r: number, g: number, b: number, sh: number, seed: number): void {
   if (v > 1.1 && v < 2.1) {
-    const wu = u / 1.6;
-    const lu = wu - Math.floor(wu);
+    const wu = u / 1.6, w = Math.floor(wu);
+    const lu = wu - w;
     if ((1.6 * fxC) / z < 1.5) put(i, G_EQ, 220, 190, 130, 0.35, z, 1);
-    else if (lu > 0.15 && lu < 0.85) put(i, G_DARK, 255, 215, 150, 0.4, z, 1);
-    else put(i, G_PIPE, r * sh, g * sh, b * sh, 0.35, z, 0);
+    else if (lu > 0.15 && lu < 0.85) {
+      const aboard = seed > 0 && (hash3(w, seed, 0x7ea1) & 3) === 0 && lu > 0.32 && lu < 0.68 && v < 1.9;
+      if (aboard) put(i, v > 1.58 ? G_o : G_DARK, 70, 52, 44, 0.55, z, 0);
+      else put(i, G_DARK, 255, 215, 150, 0.4, z, 1);
+    } else put(i, G_PIPE, r * sh, g * sh, b * sh, 0.35, z, 0);
     return;
   }
   put(i, G_EQ, r * sh, g * sh, b * sh, 0.35, z, 0);
