@@ -78,6 +78,15 @@ glow (lamps, signs, windows at night).
  timetable on the wall clock (`Rail.time`), so every player sees them in the same place: keep train positions a pure
  function of the cell, the train and the time. Walkers climb stairs and stand on platforms through `World.surface`;
  anything else raised that people walk on outdoors belongs there too.
+- **Stairs and lifts.** Buildings built with `enterable` get a lift unless the spec asks for `stairs` (houses,
+ farmhouses, mansions, riads, inns, ryokans). Stairs are straight flights stacked in one stairwell, one storey each, so a house
+ serves the storeys straight above the ground; walking on them goes through `stairFloor` (`World.surface` indoors),
+ which never leaves the feet between floors off a flight. Houses draw every storey while you are inside, so the
+ stairwell shows the floors above and below.
+- **Doors.** A building's street door is its spec's `entrance` (`Entrance` in `world/interior.ts`): automatic sliding
+ glass when left out (towers, offices, the Seafront hotels, modern shops), hinged leaves that swing in for homes,
+ inns, older shops and warehouses, a manual slider for the ryokan. Door leaves are drawn, not collided with, and
+ open by distance to the camera; a solid door's plug is the shut door, so it stays shut from afar.
 - **Facade seeds** hold the facade kind in bits 18-21 (`facadeOf`), so there is room for 16 kinds.
 - **Sign seeds** live in `Float32Array` face data, so they must stay below 2^24 (see `signSeed` in `world/signs.ts`).
   Add new sign texts only at the end of `SIGN_TEXTS`, and only with characters that exist in `world/font.ts`; a unit

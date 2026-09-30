@@ -77,7 +77,8 @@ function shophouse(B: Builder, L: Lot, inn: boolean): boolean {
   if (inn && !shop && floors >= 3) {
     enterable(B, {
       ...base, doorW: 1.6, label: 'RYOKAN', sign: text >= 0 ? -1 : TEXT_HOTEL, open: false, canopy: true,
-      programs: [TATAMI, TATAMI, TATAMI], text: -1,
+      programs: [TATAMI, TATAMI, TATAMI], text: -1, stairs: true,
+      entrance: { kind: 'slide', glazed: true, wood: true, color: [150, 112, 72] },
     });
     return true;
   }

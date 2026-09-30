@@ -94,7 +94,8 @@ function mansion(B: Builder, f: PlotFrame, side: number): void {
   if (classical) {
     enterable(B, {
       rect: main, side, h, mat: M_WALL, color: c, seed, capMat: M_ROOF, mask: BOX_SIDES,
-      doorW: 2, label: 'MANSION', sign: -1, open: false, canopy: false, programs: [SALON, LIBRARY, MASTER_SUITE], text: -1,
+      doorW: 2, label: 'MANSION', sign: -1, open: false, canopy: false, programs: [SALON, LIBRARY, MASTER_SUITE], text: -1, stairs: true,
+      entrance: { kind: 'hinged', wood: true, color: [84, 52, 32] },
     });
     const roof = pick(rng, ROOFS);
     hipRoof(faces, main, h, 3.6, 6, 0.6, M_TILES, roof, 0, M_TILES, true);
@@ -125,7 +126,7 @@ function mansion(B: Builder, f: PlotFrame, side: number): void {
     const upper = f.rect(mid - hw / 2 + 5 + shift, d0 - 1.5, mid + hw / 2 - 5 + shift, d1 - 1);
     enterable(B, {
       rect: lower, side, h: fh, mat: M_WALL, color: c, seed, capMat: M_ROOF, mask: BOX_SIDES | BOX_TOP,
-      doorW: 2, label: 'VILLA', sign: -1, open: false, canopy: false, programs: [OPEN_PLAN, null, null], text: -1,
+      doorW: 2, label: 'VILLA', sign: -1, open: false, canopy: false, programs: [OPEN_PLAN, null, null], text: -1, entrance: { kind: 'hinged', glazed: true, color: [40, 42, 46] },
     });
     faces.box(upper.x0, fh, upper.z0, upper.x1, h, upper.z1, M_WALL, c[0], c[1], c[2], seed, M_ROOF, BOX_SIDES | BOX_TOP | BOX_BOTTOM);
     const { x0, z0, x1, z1 } = upper, t = 0.05;

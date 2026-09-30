@@ -30,8 +30,10 @@ about 90 kB of gzipped JavaScript.
   the District list) to go straight there.
 - **Find the 81 hidden cats**, nine per district: in shops, on sidewalks and up on the roofs. Listen for meows; their
   eyes glow at night. Progress is saved.
-- **Go inside**: shops, cafes, noodle bars, arcades, offices, family homes, mansions and riads, with furniture,
-  people and a lift up the building.
+- **Go inside**: shops, cafes, noodle bars, arcades, offices, family homes, mansions and riads, with furniture and
+  people. Towers, hotels and offices have a lift; houses, farmhouses, mansions, riads, inns and ryokans have stairs
+  you walk up.
+  Front doors swing open as you come up to them; towers and modern shops keep sliding glass, and ryokans slide aside.
 - **Hail a taxi** with `Enter` and ride in the back: the driver, the dashboard, the fare meter and the radio around you,
   and the city going by the windows as you turn your head. `Enter` again pays and drops you on the sidewalk.
 - **Take the monorail**: loop lines circle every few districts with twelve stations each. Climb the stairs to a

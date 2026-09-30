@@ -6,7 +6,7 @@ import {
 } from '../build';
 import { BOX_SIDES } from '../faces';
 import { BAR, BEDROOM, LIVING, shopFor } from '../furniture';
-import { enterable } from '../interior';
+import { DOOR_SHOP, enterable } from '../interior';
 import { HALF, KIND_PARK, KIND_PLAZA, P } from '../layout';
 import { SIGNS_OLDTOWN, SIGN_TEXTS, WARM_SIGNS, type RGB } from '../signs';
 
@@ -59,12 +59,12 @@ function house(B: Builder, L: Lot, inn: boolean): boolean {
   if (inn && text < 0 && floors >= 3 && Math.min(L.x1 - L.x0, L.z1 - L.z0) >= 5) {
     enterable(B, {
       ...base, doorW: 1.4, label: 'INN', sign: TEXT_INN, open: false, canopy: true,
-      programs: [BAR, LIVING, BEDROOM], text: TEXT_INN,
+      programs: [BAR, LIVING, BEDROOM], text: TEXT_INN, stairs: true, entrance: { kind: 'hinged', wood: true, color: [92, 58, 34] },
     });
     return true;
   }
   if (shop && B.alt() < 0.8) {
-    enterable(B, { ...base, doorW: 1.4, label: SIGN_TEXTS[text], sign: -1, open: true, canopy: false, programs: [shop, null, null], text });
+    enterable(B, { ...base, doorW: 1.4, label: SIGN_TEXTS[text], sign: -1, open: true, canopy: false, programs: [shop, null, null], text, entrance: DOOR_SHOP });
     return false;
   }
   faces.box(L.x0, 0, L.z0, L.x1, h, L.z1, M_WALL, c[0], c[1], c[2], seed, M_ROOF, BOX_SIDES);

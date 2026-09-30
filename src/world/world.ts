@@ -2,6 +2,7 @@ import type { Camera } from '../render/camera';
 import { Cats } from './cats';
 import { City } from './city';
 import { Fireworks } from './fireworks';
+import { stairFloor } from './interior';
 import { Market } from './market';
 import { Pedestrians } from './pedestrians';
 import { drawSignals } from './signals';
@@ -43,7 +44,8 @@ export class World {
   surface(x: number, z: number, feet: number): number {
     const h = stationFloor(x, z, feet);
     if (!Number.isNaN(h)) return h;
-    if (this.city.interiorAt(x, z)) return feet;
+    const it = this.city.interiorAt(x, z);
+    if (it) return it.stair ? stairFloor(it, x, z, feet) : feet;
     return feet <= STEP ? 0 : -1;
   }
 

@@ -54,6 +54,8 @@ export class Room {
     readonly lift: readonly [number, number, number, number] | null,
     /** The shop's own sign text, reused for its menu board; -1 when there is none. */
     readonly text: number,
+    /** Stairs, the floor at either end and along their open side (a0, d0, a1, d1), kept clear. */
+    readonly stair: readonly [number, number, number, number] | null = null,
   ) {
     this.W = f.W;
     this.D = f.D;
@@ -64,12 +66,14 @@ export class Room {
       this.reserve(lift[0], lift[1], lift[2], lift[3]);
       this.reserve(lift[0] - 0.3, lift[1] - 1.9, lift[2] + 0.3, lift[1]);
     }
+    if (stair) this.reserve(stair[0], stair[1], stair[2], stair[3]);
   }
 
-  /** Centre of the entrance (or of the lift on upper floors), where the main aisle runs. */
+  /** Centre of the entrance (or of the lift or stairs on upper floors), where the main aisle runs. */
   get entry(): number {
     if (this.door) return (this.door[0] + this.door[1]) / 2;
     if (this.lift) return (this.lift[0] + this.lift[2]) / 2;
+    if (this.stair) return (this.stair[0] + this.stair[2]) / 2;
     return this.W / 2;
   }
 

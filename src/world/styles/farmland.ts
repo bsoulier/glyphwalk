@@ -11,7 +11,7 @@ import { BOX_BOTTOM, BOX_SIDES, BOX_TOP, type FaceList } from '../faces';
 import { CROP_HAY, CROP_PASTURE, FARM, FARM_FLIP, FARM_GRAIN, farmAt, fieldAt } from '../fields';
 import { BEDROOM, LIVING } from '../furniture';
 import { HOOD_BLOCKS, inCity, roadEW, roadNS } from '../hoods';
-import { doorCentre, enterable } from '../interior';
+import { DOOR_HOME, doorCentre, enterable } from '../interior';
 import { P, worldSeed } from '../layout';
 import type { RGB } from '../signs';
 
@@ -358,7 +358,7 @@ function farmstead(B: Builder, i: number, j: number, farm: number): void {
   const roofC = pick(rng, SHINGLES);
   enterable(B, {
     rect: hr, side, h, mat: M_WALL, color: c, seed, capMat: M_ROOF, mask: BOX_SIDES,
-    doorW: 1.1, label: 'FARMHOUSE', sign: -1, open: false, canopy: false, programs: [LIVING, null, BEDROOM], text: -1,
+    doorW: 1.1, label: 'FARMHOUSE', sign: -1, open: false, canopy: false, programs: [LIVING, null, BEDROOM], text: -1, stairs: true, entrance: DOOR_HOME,
   });
   gableRoof(B.faces, hr, h, 3.4, f.alongX, 0.45, M_TILES, roofC, 0, M_WALL, c, seed);
   {

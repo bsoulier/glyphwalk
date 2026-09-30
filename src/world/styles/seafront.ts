@@ -6,7 +6,7 @@ import {
 } from '../build';
 import { BOX_BOTTOM, BOX_SIDES, BOX_TOP } from '../faces';
 import { HOTEL_ROOM, LOBBY, LOUNGE, shopFor } from '../furniture';
-import { doorCentre, enterable } from '../interior';
+import { DOOR_SHOP, doorCentre, enterable } from '../interior';
 import { isBeach } from '../hoods';
 import { HALF, KIND_CITY, P } from '../layout';
 import { DECO_NEON, HOTELS_SEAFRONT, SIGNS_SEAFRONT, SIGN_TEXTS, TEXT_HOTEL, type RGB } from '../signs';
@@ -98,7 +98,7 @@ function deco(B: Builder, L: Lot, hotel: boolean): boolean {
     return true;
   }
   if (shop && B.alt() < 0.7) {
-    enterable(B, { ...base, doorW: 1.6, label: SIGN_TEXTS[text], sign: -1, open: true, canopy: false, programs: [shop, null, null], text });
+    enterable(B, { ...base, doorW: 1.6, label: SIGN_TEXTS[text], sign: -1, open: true, canopy: false, programs: [shop, null, null], text, entrance: DOOR_SHOP });
     return false;
   }
   faces.box(L.x0, 0, L.z0, L.x1, h, L.z1, M_WALL, c[0], c[1], c[2], seed, M_ROOF, BOX_SIDES | BOX_TOP);

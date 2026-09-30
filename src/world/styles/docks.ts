@@ -48,7 +48,7 @@ function warehouse(B: Builder, r: Rect, lot: Rect): void {
   if (street.length > 0 && B.alt() < 0.5) {
     enterable(B, {
       rect: r, side: street[Math.floor(B.alt() * street.length)], h, mat: M_WALL, color: c, seed, capMat: M_ROOF, mask: BOX_SIDES,
-      doorW: 1.6, label: 'WAREHOUSE', sign: TEXT_OFFICE, open: false, canopy: true, programs: [HALL, CONTROL, CONTROL], text: -1,
+      doorW: 1.6, label: 'WAREHOUSE', sign: TEXT_OFFICE, open: false, canopy: true, programs: [HALL, CONTROL, CONTROL], text: -1, entrance: { kind: 'hinged', color: [96, 104, 110] },
     });
   } else {
     faces.box(r.x0, 0, r.z0, r.x1, h, r.z1, M_WALL, c[0], c[1], c[2], seed, M_ROOF, BOX_SIDES);

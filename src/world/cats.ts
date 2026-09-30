@@ -6,7 +6,7 @@ import { hash3, mulberry32 } from '../core/hash';
 import type { City } from './city';
 import { FACE_STRIDE } from './faces';
 import { HOODS, H_FARMLAND, roadEW, roadNS } from './hoods';
-import { inCab } from './interior';
+import { inCab, onStairs } from './interior';
 import { LOT_EDGE, P, worldSeed } from './layout';
 
 export interface Cat {
@@ -92,14 +92,14 @@ export class Cats {
       id: `${b.hood}:${i}:${j}`, hood: b.hood, x, y, z, yaw, where, coat: Math.floor(rnd() * COATS.length), since: Infinity,
     });
     const roll = rnd();
-    // Inside a shop or flat, on any storey, clear of furniture and out of the lift.
+    // Inside a shop or flat, on any storey, clear of furniture and off the lift or stairs.
     if (roll < 0.4 && b.interiors.length > 0) {
       const it = b.interiors[Math.floor(rnd() * b.interiors.length)];
       const lv = it.levels[Math.floor(rnd() * it.levels.length)];
       for (let k = 0; k < 16; k++) {
         const x = it.x0 + 0.8 + rnd() * (it.x1 - it.x0 - 1.6);
         const z = it.z0 + 0.8 + rnd() * (it.z1 - it.z0 - 1.6);
-        if (inCab(it, x, z) || this.city.collides(x, z, 0.35, lv.y + 0.01)) continue;
+        if (inCab(it, x, z) || onStairs(it, x, z) || this.city.collides(x, z, 0.35, lv.y + 0.01)) continue;
         return make(x, lv.y, z, rnd() * Math.PI * 2, 'shop');
       }
     }

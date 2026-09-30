@@ -70,11 +70,17 @@ function house(B: Builder, L: Lot, riad: boolean): boolean {
   const shop = shopFor(text);
   const base = { rect: L, side: L.side, h, mat: M_WALL, color: c, seed, capMat: M_ROOF, mask: BOX_SIDES | BOX_TOP };
   if (riad && !shop && floors >= 2 && Math.min(L.x1 - L.x0, L.z1 - L.z0) >= 6) {
-    enterable(B, { ...base, doorW: 1.4, label: 'RIAD', sign: -1, open: false, canopy: false, programs: [LIVING, null, BEDROOM], text: -1 });
+    enterable(B, {
+      ...base, doorW: 1.4, label: 'RIAD', sign: -1, open: false, canopy: false, programs: [LIVING, null, BEDROOM], text: -1,
+      stairs: true, entrance: { kind: 'hinged', wood: true, color: [112, 66, 36], leaves: 2 },
+    });
     return true;
   }
   if (shop && B.alt() < 0.75) {
-    enterable(B, { ...base, doorW: 1.5, label: SIGN_TEXTS[text], sign: -1, open: true, canopy: false, programs: [shop, null, null], text });
+    enterable(B, {
+      ...base, doorW: 1.5, label: SIGN_TEXTS[text], sign: -1, open: true, canopy: false, programs: [shop, null, null], text,
+      entrance: { kind: 'hinged', glazed: true, wood: true, color: [120, 76, 42] },
+    });
     return false;
   }
   faces.box(L.x0, 0, L.z0, L.x1, h, L.z1, M_WALL, c[0], c[1], c[2], seed, M_ROOF, BOX_SIDES | BOX_TOP);

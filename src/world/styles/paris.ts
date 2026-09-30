@@ -6,7 +6,7 @@ import {
 } from '../build';
 import { BOX_SIDES } from '../faces';
 import { CAFE, HOTEL_ROOM, LOBBY, shopFor } from '../furniture';
-import { enterable } from '../interior';
+import { DOOR_SHOP, enterable } from '../interior';
 import { HALF, KIND_CITY, P } from '../layout';
 import { SIGNS_PARIS, SIGN_TEXTS, TEXT_HOTEL, WARM_SIGNS, type RGB } from '../signs';
 
@@ -72,14 +72,14 @@ function immeuble(B: Builder, L: Lot, h: number, hotel: boolean): boolean {
   if (hotel && !shop && s.len >= 10) {
     enterable(B, {
       ...base, doorW: 2.0, label: 'HOTEL', sign: text >= 0 ? -1 : TEXT_HOTEL, open: false, canopy: true,
-      programs: [LOBBY, HOTEL_ROOM, HOTEL_ROOM], text: -1,
+      programs: [LOBBY, HOTEL_ROOM, HOTEL_ROOM], text: -1, entrance: { kind: 'hinged', glazed: true, color: [28, 44, 36] },
     });
     return true;
   }
   if (shop && B.alt() < 0.6) {
     enterable(B, {
       ...base, doorW: 1.5, label: cafe ? 'CAFE' : SIGN_TEXTS[text], sign: -1, open: true, canopy: false,
-      programs: [shop, null, null], text: cafe ? TEXT_CAFE : text,
+      programs: [shop, null, null], text: cafe ? TEXT_CAFE : text, entrance: DOOR_SHOP,
     });
     return false;
   }

@@ -6,7 +6,7 @@ import {
 } from '../build';
 import { BOX_BOTTOM, BOX_SIDES, BOX_TOP } from '../faces';
 import { BEDROOM, LIVING, shopFor } from '../furniture';
-import { doorCentre, enterable } from '../interior';
+import { DOOR_HOME, doorCentre, enterable } from '../interior';
 import { HALF, KIND_PARK, KIND_PLAZA, P } from '../layout';
 import { SIGNS_SUBURB, SIGN_TEXTS, WARM_SIGNS, type RGB } from '../signs';
 
@@ -100,7 +100,7 @@ function house(B: Builder, f: PlotFrame, side: number, enter: boolean, first: bo
     enterable(B, {
       rect: r, side, h, mat: M_WALL, color: c, seed, capMat: M_ROOF, mask: BOX_SIDES,
       doorW: 1.1, label: 'HOUSE', sign: -1, open: false, canopy: false,
-      programs: floors > 1 ? [LIVING, null, BEDROOM] : [LIVING, null, null], text: -1,
+      programs: floors > 1 ? [LIVING, null, BEDROOM] : [LIVING, null, null], text: -1, stairs: true, entrance: DOOR_HOME,
     });
   } else {
     faces.box(r.x0, 0, r.z0, r.x1, h, r.z1, M_WALL, c[0], c[1], c[2], seed, M_ROOF, BOX_SIDES);

@@ -679,6 +679,7 @@ function prompts(): Prompt[] {
         if (player.liftMoving) break;
         if (!inCab(it, player.x, player.z)) {
           if (it.lift) p.push(['', 'lift at the back']);
+          else if (it.stair && player.floorY === it.levels[0].y) p.push(['', 'stairs at the back']);
         } else if (keys) {
           const k = it.levels.findIndex((l) => Math.abs(l.y - player.floorY) < 0.5);
           if (k < it.levels.length - 1) p.push(['E', 'lift up']);

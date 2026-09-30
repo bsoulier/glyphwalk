@@ -2,11 +2,11 @@ import type { Camera } from '../render/camera';
 import { drawBoxYaw, drawFace, drawPoint, sphereVisible } from '../render/raster';
 import { FLOOR_H, facadeOf, facadeWindows } from '../render/facades';
 import { FLOOR_CARPET } from '../render/interiors';
-import { M_CEILING, M_FLOOR, M_GLOW, M_PAINT, M_PLASTER, M_RAIL, M_SIGN } from '../render/materials';
+import { M_CEILING, M_FLOOR, M_GLOW, M_PAINT, M_PLASTER, M_RAIL, M_SIGN, M_WOOD } from '../render/materials';
 import { glyph } from '../core/charset';
 import { hash2, mulberry32 } from '../core/hash';
 import { type Builder, type Rect, type Side, G_PIPE, LIGHT_LAMP, sideOf } from './build';
-import { BOX_E, BOX_N, BOX_S, BOX_W, FACE_STRIDE, FaceList } from './faces';
+import { BOX_BOTTOM, BOX_E, BOX_N, BOX_S, BOX_SIDES, BOX_TOP, BOX_W, FACE_STRIDE, FaceList } from './faces';
 import { type Program, Room } from './furniture';
 import { EYE_H } from './layout';
 import { drawOccupants } from './occupants';
@@ -29,6 +29,13 @@ const LOOK_IN = 32;
 /** Height of the lift's housing above a roof level, clear of the cab's own ceiling (CAB_H). */
 const HUT_H = 3.0;
 const RAIL: RGB = [200, 206, 216];
+/** Houses climb by straight flights: their width, the clear floor at either end, and metres of run per metre of rise. */
+const STAIR_W = 1.0;
+const STAIR_LAND = 1.1;
+const STAIR_GOING = 1.45;
+const STAIR_RISER = 0.19;
+/** Most the feet climb or drop in one step indoors, on the stairs or off them. */
+const STAIR_STEP = 0.6;
 
 export interface Level {
   y: number;
@@ -57,6 +64,38 @@ export interface Door {
   w: number;
 }
 
+/** How a building's street door opens and what it looks like. */
+export interface Entrance {
+  /** 'auto': glass leaves that slide apart by themselves; 'hinged': leaves that swing in; 'slide': leaves pushed aside by hand into the wall. */
+  kind: 'auto' | 'hinged' | 'slide';
+  /** Glass above a solid bottom panel, so the lit room shows through while it is shut. */
+  glazed?: boolean;
+  /** Natural wood instead of paint. */
+  wood?: boolean;
+  /** Left out, a paint colour is picked from the facade seed. */
+  color?: RGB;
+  /** One leaf or a pair; left out, sliding doors get a pair (so each hides only half the width in the wall), hinged ones from 1.5 m wide. */
+  leaves?: 1 | 2;
+}
+
+/** Glass doors that part by themselves: towers, offices, big hotels and modern shops. */
+export const DOOR_AUTO: Entrance = { kind: 'auto', glazed: true };
+/** A painted front door on hinges. */
+export const DOOR_HOME: Entrance = { kind: 'hinged' };
+/** A painted shop door on hinges, glazed so the shop shows. */
+export const DOOR_SHOP: Entrance = { kind: 'hinged', glazed: true };
+
+/** The door in a building's street wall; (x, z) is the middle of the opening, halfway through the wall. */
+export interface StreetDoor extends Door {
+  kind: Entrance['kind'];
+  glazed: boolean;
+  mat: number;
+  color: RGB;
+  leaves: number;
+  /** The jamb a single leaf hangs from, or the way a sliding one goes: 1 towards +t, -1 towards -t. */
+  hinge: number;
+}
+
 export interface Interior {
   x0: number;
   z0: number;
@@ -70,8 +109,30 @@ export interface Interior {
   lift: Rect | null;
   /** Cab doors across the shaft opening, on the cab side, facing into the room. */
   liftDoor: Door | null;
+  /** Houses have stairs instead of a lift; null elsewhere. */
+  stair: Stair | null;
+  /** Fills the doorway from afar: a warm glow behind glass, else the shut door itself. */
   plug: Float32Array;
-  door: Door;
+  door: StreetDoor;
+}
+
+/**
+ * Straight flights stacked one above the other, one per storey, each rising from a level to the next.
+ * `u` runs up the flights from their foot, `v` across them from the open side to the wall.
+ */
+export interface Stair {
+  /** Footprint of the flights, which is also the hole in every floor above the ground. */
+  rect: Rect;
+  /** Foot of the flights on the open side. */
+  x: number;
+  z: number;
+  ux: number;
+  uz: number;
+  vx: number;
+  vz: number;
+  run: number;
+  /** Length of one tread. */
+  going: number;
 }
 
 export interface EnterSpec {
@@ -95,6 +156,13 @@ export interface EnterSpec {
   programs: readonly [Program, Program | null, Program | null];
   /** An open-air level on the roof, served by the lift too: no ceiling, a railing round the edge. */
   roof?: Program;
+  /**
+   * Stairs instead of a lift, for houses. They climb one storey at a time, so the middle and top
+   * programs go on the storeys straight above the ground. Falls back to the lift where no flight fits.
+   */
+  stairs?: boolean;
+  /** The street door; automatic sliding glass when left out. */
+  entrance?: Entrance;
   /** The shop's sign text, reused on its menu board. */
   text: number;
 }
@@ -187,6 +255,10 @@ function signFace(L: FaceList, s: Side, uc: number, y0: number, out: number, tex
 
 const GLOW: RGB = [255, 226, 170];
 const LIFT_STEEL: RGB = [150, 154, 160];
+const GLASS_FRAME: RGB = [70, 74, 82];
+const BRASS: RGB = [206, 172, 92];
+/** Front door paint, one picked per building from its facade seed. */
+const DOOR_PAINT: readonly RGB[] = [[140, 36, 34], [38, 72, 54], [34, 46, 82], [226, 224, 214], [30, 30, 34], [96, 122, 134], [150, 104, 60]];
 
 /**
  * Centre of the door along a street side `len` metres long, for a building wearing facade `seed`: on a
@@ -197,6 +269,114 @@ export function doorCentre(seed: number, len: number): number {
   const uc = fw.ground === null ? Math.max(1, Math.round(len / 16)) * 8 : (Math.floor(len / fw.colW / 2) + 0.5) * fw.colW;
   const edge = WALL_T + LIFT_HALF + LIFT_WALL + 0.2;
   return len > 2 * edge ? Math.min(len - edge, Math.max(edge, uc)) : len / 2;
+}
+
+/**
+ * Where a flight `run` long fits in a W x D room whose door is centred at `door` along the front wall,
+ * in the room's a/d frame: the foot on the open side, then the directions of u and v. Along the back
+ * wall rising to the right when the room is wide enough, else along the side wall away from the door.
+ */
+function stairPlan(W: number, D: number, run: number, door: number): { oa: number; od: number; ua: number; ud: number; va: number; vd: number } | null {
+  if (W >= run + 2 * STAIR_LAND && D >= STAIR_W + 4) return { oa: W - STAIR_LAND - run, od: D - STAIR_W, ua: 1, ud: 0, va: 0, vd: 1 };
+  if (D >= run + 2 * STAIR_LAND + 1 && W >= STAIR_W + 3) {
+    const od = D - STAIR_LAND - run;
+    return door < W / 2 ? { oa: W - STAIR_W, od, ua: 0, ud: 1, va: 1, vd: 0 } : { oa: STAIR_W, od, ua: 0, ud: 1, va: -1, vd: 0 };
+  }
+  return null;
+}
+
+const TREAD: RGB = [132, 92, 58];
+const HANDRAIL: RGB = [84, 54, 34];
+const BALUSTER: RGB = [228, 222, 208];
+const BOX_ALL = BOX_SIDES | BOX_TOP | BOX_BOTTOM;
+
+/** Box between two corners given in the stair's (u, v) frame, which is axis-aligned in the world. */
+function stairBox(L: FaceList, s: Stair, u0: number, u1: number, v0: number, v1: number, y0: number, y1: number, mat: number, c: RGB, mask = BOX_ALL): void {
+  const xa = s.x + s.ux * u0 + s.vx * v0, za = s.z + s.uz * u0 + s.vz * v0;
+  const xb = s.x + s.ux * u1 + s.vx * v1, zb = s.z + s.uz * u1 + s.vz * v1;
+  L.box(Math.min(xa, xb), y0, Math.min(za, zb), Math.max(xa, xb), y1, Math.max(za, zb), mat, c[0], c[1], c[2], 0, mat, mask);
+}
+
+/** Quad with corners (u, v, y) in the stair's frame, wound so it faces along (nu, nv, ny). */
+function stairQuad(L: FaceList, s: Stair, q: readonly number[], nu: number, nv: number, ny: number, mat: number, c: RGB): void {
+  const p = (k: number) => [s.x + s.ux * q[k * 3] + s.vx * q[k * 3 + 1], q[k * 3 + 2], s.z + s.uz * q[k * 3] + s.vz * q[k * 3 + 1]];
+  const a = p(0), b = p(1), cc = p(2), d = p(3);
+  const nx = s.ux * nu + s.vx * nv, nz = s.uz * nu + s.vz * nv;
+  // FaceList.poly takes the normal from (d - a) x (b - a).
+  const ex = d[0] - a[0], ey = d[1] - a[1], ez = d[2] - a[2], fx = b[0] - a[0], fy = b[1] - a[1], fz = b[2] - a[2];
+  const [e, f] = (ey * fz - ez * fy) * nx + (ez * fx - ex * fz) * ny + (ex * fy - ey * fx) * nz >= 0 ? [b, d] : [d, b];
+  L.poly(a[0], a[1], a[2], e[0], e[1], e[2], cc[0], cc[1], cc[2], f[0], f[1], f[2], 0, 0, 1, 0, 1, 1, 0, 1, mat, c[0], c[1], c[2], 0);
+}
+
+/**
+ * One flight from the floor at `y0` to the floor at `y1`: solid treads with a stepped soffit that
+ * clears the flight below, balusters on every other step and a handrail along the open side.
+ */
+function flight(L: FaceList, s: Stair, y0: number, y1: number): void {
+  const n = Math.round(s.run / s.going), r = (y1 - y0) / n, g = s.going;
+  for (let k = 0; k < n; k++) {
+    const top = y0 + (k + 1) * r;
+    stairBox(L, s, k * g, (k + 1) * g, 0, STAIR_W, Math.max(y0 + 0.02, top - r - 0.3), top, M_WOOD, TREAD);
+    if (k % 2 === 0) stairBox(L, s, (k + 0.5) * g - 0.025, (k + 0.5) * g + 0.025, 0.03, 0.08, top, top + 0.88, M_PAINT, BALUSTER, BOX_SIDES);
+  }
+  // The rail follows the tread centres, 0.9 m up.
+  const ya = y0 + r / 2 + 0.9, yb = y1 + r / 2 + 0.9, u1 = s.run;
+  stairQuad(L, s, [0, 0.02, ya, u1, 0.02, yb, u1, 0.1, yb, 0, 0.1, ya], 0, 0, 1, M_WOOD, HANDRAIL);
+  stairQuad(L, s, [0, 0.02, ya - 0.08, u1, 0.02, yb - 0.08, u1, 0.02, yb, 0, 0.02, ya], 0, -1, 0, M_WOOD, HANDRAIL);
+  stairQuad(L, s, [0, 0.1, ya - 0.08, u1, 0.1, yb - 0.08, u1, 0.1, yb, 0, 0.1, ya], 0, 1, 0, M_WOOD, HANDRAIL);
+  stairBox(L, s, 0, 0.12, 0, 0.12, y0, ya + 0.1, M_WOOD, HANDRAIL);
+  // Edges of the hole in the slab above, so the gap between ceiling and floor never shows.
+  const e0 = y1 - SLAB, e1 = y1 + 0.02;
+  stairQuad(L, s, [0, 0, e0, u1, 0, e0, u1, 0, e1, 0, 0, e1], 0, 1, 0, M_PLASTER, BALUSTER);
+  stairQuad(L, s, [0, 0, e0, 0, STAIR_W, e0, 0, STAIR_W, e1, 0, 0, e1], 1, 0, 0, M_PLASTER, BALUSTER);
+  stairQuad(L, s, [u1, 0, e0, u1, STAIR_W, e0, u1, STAIR_W, e1, u1, 0, e1], -1, 0, 0, M_PLASTER, BALUSTER);
+}
+
+/**
+ * Railing round the hole the flight below comes up through, on the floor at `y`: along the open side
+ * from `from` up to the top, and across the foot when no flight climbs on from this floor.
+ */
+function stairGuard(L: FaceList, s: Stair, y: number, from: number, foot: boolean): void {
+  const posts = (u0: number, v0: number, u1: number, v1: number) => {
+    const n = Math.max(1, Math.ceil(Math.hypot(u1 - u0, v1 - v0) / 1.3));
+    for (let k = 0; k <= n; k++) {
+      const u = u0 + ((u1 - u0) * k) / n, v = v0 + ((v1 - v0) * k) / n;
+      stairBox(L, s, u - 0.03, u + 0.03, v - 0.03, v + 0.03, y, y + 0.95, M_WOOD, HANDRAIL, BOX_SIDES);
+    }
+    for (const h of [0.5, 1.0]) stairBox(L, s, Math.min(u0, u1) - 0.03, Math.max(u0, u1) + 0.03, Math.min(v0, v1) - 0.03, Math.max(v0, v1) + 0.03, y + h - 0.05, y + h, M_WOOD, HANDRAIL);
+  };
+  posts(from, -0.04, s.run, -0.04);
+  if (foot) posts(-0.04, -0.04, -0.04, STAIR_W - 0.03);
+}
+
+/**
+ * Height to stand at on (x, z) inside a house with stairs, walking from `feet`: a flight carries the
+ * feet up and down, and off it they stand on a floor, never in the air between two. A flight is only
+ * stepped onto from a floor at its foot or its top, not over the railing along its side. -1 where
+ * there is nothing to stand on within a step.
+ */
+export function stairFloor(it: Interior, x: number, z: number, feet: number): number {
+  const s = it.stair!, lv = it.levels;
+  let onFloor = false;
+  for (const l of lv) if (l.y === feet) onFloor = true;
+  if (inRect(s.rect, x, z)) {
+    const u = (x - s.x) * s.ux + (z - s.z) * s.uz;
+    if (onFloor && u > s.going && u < s.run - s.going) return -1;
+    // Strictly between the floors anywhere on a flight, so standing exactly on a floor means coming off one.
+    const t = Math.min(1, Math.max(0, (u + s.going / 2) / (s.run + s.going / 2)));
+    for (let k = 0; k + 1 < lv.length; k++) {
+      const h = lv[k].y + (lv[k + 1].y - lv[k].y) * t;
+      if (Math.abs(h - feet) <= STAIR_STEP) return h;
+    }
+    return -1;
+  }
+  for (const l of lv) if (Math.abs(l.y - feet) <= STAIR_STEP) return l.y;
+  return -1;
+}
+
+/** On or over the stairs, where nothing is set down. */
+export function onStairs(it: Interior, x: number, z: number): boolean {
+  return it.stair !== null && inRect(it.stair.rect, x, z, -0.4);
 }
 
 /**
@@ -260,11 +440,18 @@ export function enterable(B: Builder, spec: EnterSpec): void {
   };
 
   const ks: { k: number; p: Program }[] = [{ k: 0, p: spec.programs[0] }];
-  const mid = Math.floor(floors / 2);
-  if (spec.programs[1] && mid > 0 && mid < floors - 1) ks.push({ k: mid, p: spec.programs[1] });
-  if (spec.programs[2] && floors > 1) ks.push({ k: floors - 1, p: spec.programs[2] });
-  const hasLift = ks.length > 1 && D > LIFT_DEPTH + 5;
-  if (!hasLift) ks.length = 1;
+  const run = fh * STAIR_GOING;
+  const plan = spec.stairs && floors > 1 && (spec.programs[1] || spec.programs[2]) ? stairPlan(W, D, run, uc - WALL_T) : null;
+  if (plan) {
+    if (spec.programs[1] && floors > 2) ks.push({ k: 1, p: spec.programs[1] });
+    if (spec.programs[2]) ks.push({ k: ks.length, p: spec.programs[2] });
+  } else {
+    const mid = Math.floor(floors / 2);
+    if (spec.programs[1] && mid > 0 && mid < floors - 1) ks.push({ k: mid, p: spec.programs[1] });
+    if (spec.programs[2] && floors > 1) ks.push({ k: floors - 1, p: spec.programs[2] });
+  }
+  const hasLift = !plan && ks.length > 1 && D > LIFT_DEPTH + 5;
+  if (!plan && !hasLift) ks.length = 1;
   const roof = hasLift ? spec.roof ?? null : null;
   const storeys = ks.map(({ k, p }) => ({ k, p, y: k * fh, open: false }));
   if (roof) storeys.push({ k: floors, p: roof, y: h, open: true });
@@ -275,6 +462,22 @@ export function enterable(B: Builder, spec: EnterSpec): void {
   const liftLocal = [la0 - LIFT_WALL, ld0 - LIFT_WALL, la1 + LIFT_WALL, D] as const;
   const shaftRect = hasLift ? toWorld(...liftLocal) : null;
   const topCeil = roof ? h + HUT_H : (ks[ks.length - 1].k + 1) * fh - SLAB;
+
+  let stair: Stair | null = null;
+  let stairClear: [number, number, number, number] | null = null;
+  if (plan) {
+    const { oa, od, ua, ud, va, vd } = plan;
+    const la = (u: number, v: number) => oa + ua * u + va * v, ld = (u: number, v: number) => od + ud * u + vd * v;
+    const o = toWorld(oa, od, oa, od);
+    stair = {
+      rect: toWorld(la(0, 0), ld(0, 0), la(run, STAIR_W), ld(run, STAIR_W)),
+      x: o.x0, z: o.z0, ux: ax * ua + dx * ud, uz: az * ua + dz * ud, vx: ax * va + dx * vd, vz: az * va + dz * vd,
+      run, going: run / Math.round(fh / STAIR_RISER),
+    };
+    // Furniture keeps off the flights, the floor at either end and a strip along the open side.
+    const a0 = la(-STAIR_LAND, -0.7), a1 = la(run + STAIR_LAND, STAIR_W), d0 = ld(-STAIR_LAND, -0.7), d1 = ld(run + STAIR_LAND, STAIR_W);
+    stairClear = [Math.max(0, Math.min(a0, a1)), Math.max(0, Math.min(d0, d1)), Math.min(W, Math.max(a0, a1)), Math.min(D, Math.max(d0, d1))];
+  }
 
   // --- colliders: thin walls with a gap at the door, instead of the whole footprint ---
   const T = WALL_T + 0.05;
@@ -346,8 +549,11 @@ export function enterable(B: Builder, spec: EnterSpec): void {
   const levels: Level[] = [];
   const innerRect: Rect = { x0: r.x0 + WALL_T, z0: r.z0 + WALL_T, x1: r.x1 - WALL_T, z1: r.z1 - WALL_T };
   const back = (side + 2) & 3;
-  for (const { k, p, y, open } of storeys) {
+  for (let i = 0; i < storeys.length; i++) {
+    const { k, p, y, open } = storeys[i];
     const ceil = open ? y + HUT_H : (k + 1) * fh - SLAB;
+    // With stairs every storey shows through the stairwell, so walls run on up to the next floor.
+    const up = stair && i < storeys.length - 1 ? storeys[i + 1].y : null;
     const L = new FaceList();
     const lights: number[] = [];
     for (let sd = 0; sd < 4 && !open; sd++) {
@@ -369,16 +575,19 @@ export function enterable(B: Builder, spec: EnterSpec): void {
       holedWall((u0, u1, ya, yb) => {
         vquad(L, ss.p0x + ss.tx * u0 + inx, ss.p0z + ss.tz * u0 + inz, ss.p0x + ss.tx * u1 + inx, ss.p0z + ss.tz * u1 + inz,
           ya, yb, -ss.nx, -ss.nz, ya - y, M_PLASTER, p.wall, 0);
-      }, WALL_T, ss.len - WALL_T, y, ceil, holes);
+      }, WALL_T, ss.len - WALL_T, y, up === null ? ceil : up + 0.02, holes);
     }
-    for (const q of minus(innerRect, shaftRect)) {
-      hquad(L, q, y + 0.02, true, M_FLOOR, p.floorC, p.floor);
-      if (!open) hquad(L, q, ceil, false, M_CEILING, p.light, 0);
+    for (const q of minus(innerRect, stair && i > 0 ? stair.rect : shaftRect)) hquad(L, q, y + 0.02, true, M_FLOOR, p.floorC, p.floor);
+    for (const q of minus(innerRect, up !== null ? stair!.rect : shaftRect)) if (!open) hquad(L, q, ceil, false, M_CEILING, p.light, 0);
+    if (stair) {
+      if (up !== null) flight(L, stair, y, up);
+      // The guard stops where the flight on up from here clears it overhead.
+      if (i > 0) stairGuard(L, stair, y, up === null ? 0 : (1.4 * run) / fh, up === null);
     }
     const room = new Room(
       { ox, oz, ax, az, dx, dz, W, D, y: y + 0.02, H: ceil - y - 0.02 },
       L, lights, B.levelColliders, mulberry32(hash2(spec.seed, k * 7919 + 1)),
-      k === 0 ? [t0 - WALL_T, t1 - WALL_T] : null, hasLift ? liftLocal : null, spec.text,
+      k === 0 ? [t0 - WALL_T, t1 - WALL_T] : null, hasLift ? liftLocal : null, spec.text, stairClear,
     );
     if (hasLift) {
       room.wallSign(TEXT_LIFT, ca, ld0 - LIFT_WALL - 0.02, LIFT_OPEN_H + 0.1, 0.25, 'front', [200, 230, 255]);
@@ -400,13 +609,22 @@ export function enterable(B: Builder, spec: EnterSpec): void {
     }
   }
 
+  const ent = spec.entrance ?? DOOR_AUTO;
+  const dh = hash2(spec.seed, 0xd00);
+  const door: StreetDoor = {
+    x: px(uc) + ix / 2, z: pz(uc) + iz / 2, tx: s.tx, tz: s.tz, nx: s.nx, nz: s.nz, w: doorW,
+    kind: ent.kind, glazed: ent.kind === 'auto' || ent.glazed === true, mat: ent.wood ? M_WOOD : M_PAINT,
+    color: ent.kind === 'auto' ? GLASS_FRAME : ent.color ?? DOOR_PAINT[dh % DOOR_PAINT.length],
+    leaves: ent.leaves ?? (ent.kind !== 'hinged' || doorW >= 1.5 ? 2 : 1),
+    hinge: dh & 0x100 ? 1 : -1,
+  };
   const plug = new FaceList();
-  vquad(plug, px(t0) + ix, pz(t0) + iz, px(t1) + ix, pz(t1) + iz, 0, DOOR_H, s.nx, s.nz, 0, M_GLOW, [150, 120, 80], 0);
+  if (door.glazed) vquad(plug, px(t0) + ix, pz(t0) + iz, px(t1) + ix, pz(t1) + iz, 0, DOOR_H, s.nx, s.nz, 0, M_GLOW, [150, 120, 80], 0);
+  else vquad(plug, px(t0) + ix / 2, pz(t0) + iz / 2, px(t1) + ix / 2, pz(t1) + iz / 2, 0, DOOR_H, s.nx, s.nz, 0, door.mat, door.color, 0);
 
   B.interiors.push({
     x0: r.x0, z0: r.z0, x1: r.x1, z1: r.z1, top: roof ? h + HUT_H : h, label: spec.label, levels,
-    shaft: shaft.toArray(), lift, liftDoor, plug: plug.toArray(),
-    door: { x: px(uc) + ix / 2, z: pz(uc) + iz / 2, tx: s.tx, tz: s.tz, nx: s.nx, nz: s.nz, w: doorW },
+    shaft: shaft.toArray(), lift, liftDoor, stair, plug: plug.toArray(), door,
   });
   B.maxH = Math.max(B.maxH, h);
 }
@@ -423,6 +641,12 @@ function drawList(f: Float32Array): void {
 
 function drawLights(l: Float32Array): void {
   for (let o = 0; o < l.length; o += 6) drawPoint(l[o], l[o + 1], l[o + 2], G_o, l[o + 3], l[o + 4], l[o + 5], 0.6, 1);
+}
+
+function drawLevel(lv: Level, cam: Camera, time: number): void {
+  drawList(lv.faces);
+  drawLights(lv.lights);
+  drawOccupants(lv.people, cam, time);
 }
 
 function flat(r: Rect, y: number, up: boolean, mat: number, c: RGB, seed: number): void {
@@ -465,14 +689,63 @@ function cabDoors(d: Door, y: number, closed: number): void {
   }
 }
 
-/** Glass sliding doors: only the frames are drawn, so the lit room shows through; they part as you come near. */
-function doorLeaves(d: Door, cam: Camera): void {
+/**
+ * The street door, opening as you come up to it and shutting behind you: glass that slides apart by
+ * itself, leaves that swing in, or a leaf pushed aside into the wall. Further off the plug stands in.
+ */
+function drawDoor(d: StreetDoor, cam: Camera): void {
   const dist = Math.hypot(cam.x - d.x, cam.z - d.z);
-  if (dist > 30) return;
+  if (dist > LOOK_IN) return;
+  if (d.kind === 'auto') return slidingGlass(d, dist);
+  const e = Math.min(1, Math.max(0, (4 - dist) / 1.6)), open = e * e * (3 - 2 * e);
+  const len = d.w / d.leaves;
+  if (d.kind === 'slide') {
+    // Each leaf runs from its leading edge, which slides into the wall, to the edge that meets the other one.
+    const off = d.w / 2 + open * (len - 0.1);
+    for (let k = 0; k < d.leaves; k++) {
+      const s = d.leaves === 2 ? 2 * k - 1 : d.hinge;
+      leaf(d, d.x + d.tx * s * off, d.z + d.tz * s * off, -d.tx * s, -d.tz * s, len);
+    }
+    return;
+  }
+  const a = open * 1.7, cs = Math.cos(a), sn = Math.sin(a);
+  for (let k = 0; k < d.leaves; k++) {
+    const s = d.leaves === 2 ? 2 * k - 1 : d.hinge;
+    // Shut, a leaf reaches from its hinge towards the middle; it swings in, away from the street.
+    leaf(d, d.x + d.tx * s * d.w / 2, d.z + d.tz * s * d.w / 2, -d.tx * s * cs - d.nx * sn, -d.tz * s * cs - d.nz * sn, len);
+  }
+}
+
+/** A box on a door leaf, from `a0` to `a1` along (dx, dz) out of the edge at (x, z). */
+function leafPart(x: number, z: number, dx: number, dz: number, a0: number, a1: number, y0: number, y1: number, t: number, mat: number, c: RGB): void {
+  const a = (a0 + a1) / 2;
+  drawBoxYaw(x + dx * a, (y0 + y1) / 2, z + dz * a, Math.atan2(-dz, dx), (a1 - a0) / 2, (y1 - y0) / 2, t, mat, c[0], c[1], c[2], 0);
+}
+
+/** One leaf `len` wide out of the edge at (x, z) along (dx, dz), with its handle near the far edge. */
+function leaf(d: StreetDoor, x: number, z: number, dx: number, dz: number, len: number): void {
+  const top = DOOR_H - 0.02, m = d.mat, c = d.color;
+  if (!d.glazed) leafPart(x, z, dx, dz, 0.01, len - 0.01, 0.02, top, 0.025, m, c);
+  else {
+    leafPart(x, z, dx, dz, 0.01, 0.1, 0.02, top, 0.025, m, c);
+    leafPart(x, z, dx, dz, len - 0.1, len - 0.01, 0.02, top, 0.025, m, c);
+    leafPart(x, z, dx, dz, 0.1, len - 0.1, 0.02, 0.85, 0.025, m, c);
+    leafPart(x, z, dx, dz, 0.1, len - 0.1, top - 0.12, top, 0.025, m, c);
+    if (d.kind === 'slide') {
+      // Wooden lattice over the glass.
+      for (const f of [1 / 3, 2 / 3]) leafPart(x, z, dx, dz, len * f - 0.015, len * f + 0.015, 0.85, top - 0.12, 0.02, m, c);
+      for (const y of [1.35, 1.8]) leafPart(x, z, dx, dz, 0.1, len - 0.1, y - 0.015, y + 0.015, 0.02, m, c);
+    }
+  }
+  leafPart(x, z, dx, dz, len - 0.17, len - 0.11, 0.98, 1.06, 0.07, M_PAINT, BRASS);
+}
+
+/** Glass sliding doors: only the frames are drawn, so the lit room shows through; they part as you come near. */
+function slidingGlass(d: StreetDoor, dist: number): void {
   const open = Math.min(1, Math.max(0, (4.5 - dist) / 2));
   const yaw = Math.atan2(d.nx, d.nz);
   const half = d.w / 4;
-  const c: RGB = [70, 74, 82];
+  const c = d.color;
   for (const side of [-1, 1]) {
     const off = side * (half + open * d.w * 0.48);
     const cx = d.x + d.tx * off, cz = d.z + d.tz * off;
@@ -485,7 +758,8 @@ function doorLeaves(d: Door, cam: Camera): void {
 }
 
 /**
- * Inside: the storey the camera stands on, plus the lift shaft and cab. Outside: the lobby when the
+ * Inside: the storey the camera stands on, plus the lift shaft and cab; every storey in a house with
+ * stairs, since they show through the stairwell. Outside: the lobby when the
  * door faces you and is close enough to look through, otherwise a warm panel that fills the doorway.
  * `liftDoors` is how far the cab doors are closed (0 open, 1 shut); they stay shut while the cab moves,
  * so between floors there is never an opening to see through. Returns true when the camera is inside.
@@ -497,10 +771,10 @@ export function drawInterior(it: Interior, cam: Camera, liftDoors: number, time:
   if (inside) {
     const feet = cam.y - EYE_H;
     const lv = levelAt(it, feet);
-    if (lv) {
-      drawList(lv.faces);
-      drawLights(lv.lights);
-      drawOccupants(lv.people, cam, time);
+    if (it.stair) {
+      for (const l of it.levels) drawLevel(l, cam, time);
+    } else if (lv) {
+      drawLevel(lv, cam, time);
       cabY = lv.y;
     }
     if (it.lift && inRect(it.lift, cam.x, cam.z)) {
@@ -515,9 +789,9 @@ export function drawInterior(it: Interior, cam: Camera, liftDoors: number, time:
       drawList(it.plug);
       return false;
     }
-    drawList(it.levels[0].faces);
-    drawLights(it.levels[0].lights);
-    drawOccupants(it.levels[0].people, cam, time);
+    drawLevel(it.levels[0], cam, time);
+    // Through the stairwell at the back you see up to the next floor.
+    if (it.stair && it.levels.length > 1) drawLevel(it.levels[1], cam, time);
   }
   if (it.lift) {
     drawList(it.shaft);
@@ -525,6 +799,6 @@ export function drawInterior(it: Interior, cam: Camera, liftDoors: number, time:
     flat(it.lift, cabY + CAB_H, false, M_CEILING, [230, 235, 255], 0);
     if (inShaft && it.liftDoor) cabDoors(it.liftDoor, cabY, liftDoors);
   }
-  doorLeaves(it.door, cam);
+  drawDoor(it.door, cam);
   return inside;
 }
