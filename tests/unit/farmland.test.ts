@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { City } from '../../src/world/city';
+import { City, POLE_STRIDE } from '../../src/world/city';
 import { Cats } from '../../src/world/cats';
+import { FACE_STRIDE } from '../../src/world/faces';
+import { FARM_GRAIN, farmAt } from '../../src/world/fields';
 import {
   CITY_HALF, HOOD_BLOCKS, H_FARMLAND, hoodAt, hoodOfRegion, inCity, roadEW, roadNS, signalled,
 } from '../../src/world/hoods';
-import { LANE, P, setWorldSeed } from '../../src/world/layout';
+import { LANE, P, ROAD_HALF, setWorldSeed } from '../../src/world/layout';
 import { LOOP_BLOCKS, STATIONS, hasLoop, stationsOf } from '../../src/world/loop';
 import { Pedestrians } from '../../src/world/pedestrians';
 import { KIND_TAXI, Traffic } from '../../src/world/traffic';
@@ -68,6 +70,14 @@ function inLane(x: number, z: number): boolean {
   return false;
 }
 
+/** Is (x, z) on the asphalt of a road that exists (a country road, or the city street along the edge), widened by `m`? */
+function onRoad(x: number, z: number, m: number): boolean {
+  const bi = Math.floor(x / P), bj = Math.floor(z / P), n = Math.round(x / P), e = Math.round(z / P);
+  const ns = inCity(n - 1, bj) || inCity(n, bj) ? ROAD_HALF : 4.4;
+  const ew = inCity(bi, e - 1) || inCity(bi, e) ? ROAD_HALF : 4.4;
+  return (roadNS(n, bj) && Math.abs(x - n * P) < ns + m) || (roadEW(e, bi) && Math.abs(z - e * P) < ew + m);
+}
+
 describe('out in the farmland', () => {
   const env = { time: 0, walker: null, peds: [] };
   // Two sections out from the east edge of the city, by a country road.
@@ -104,7 +114,92 @@ describe('out in the farmland', () => {
     expect(walking).toBeGreaterThan(1000);
   });
 
-  it('puts farm cats by the roadside, not out in the crops', () => {
+  it('has a farmstead in about every other section, by a country road', () => {
+    let sections = 0, farms = 0;
+    for (let si = -30; si < 30; si++) {
+      for (let sj = -30; sj < 30; sj++) {
+        const i0 = si * HOOD_BLOCKS, j0 = sj * HOOD_BLOCKS;
+        const here: [number, number, number][] = [];
+        for (let i = i0; i < i0 + HOOD_BLOCKS; i++) for (let j = j0; j < j0 + HOOD_BLOCKS; j++) {
+          const f = farmAt(i, j);
+          if (f >= 0) here.push([i, j, f & 3]);
+        }
+        if (inCity(i0, j0)) {
+          expect(here).toHaveLength(0);
+          continue;
+        }
+        sections++;
+        expect(here.length).toBeLessThanOrEqual(1);
+        if (here.length === 0) continue;
+        farms++;
+        // Its drive leaves by a road that is a country road, not a city street and not a crossroads.
+        const [i, j, side] = here[0];
+        const road = side === 0 ? roadEW(j, i) : side === 1 ? roadNS(i + 1, j) : side === 2 ? roadEW(j + 1, i) : roadNS(i, j);
+        expect(road).toBe(true);
+        const [ai, aj] = side === 0 ? [i, j - 1] : side === 1 ? [i + 1, j] : side === 2 ? [i, j + 1] : [i - 1, j];
+        expect(inCity(ai, aj)).toBe(false);
+        const along = side === 0 || side === 2 ? i - i0 : j - j0;
+        expect(along === 1 || along === 2).toBe(true);
+      }
+    }
+    expect(farms / sections).toBeGreaterThan(0.45);
+    expect(farms / sections).toBeLessThan(0.65);
+  });
+
+  it('builds each farmstead with a farmhouse to walk into, a barn, and silos or grain bins', () => {
+    const city = new City();
+    let dairy = 0, grain = 0;
+    for (let i = CITY_HALF; i < CITY_HALF + 40; i++) {
+      for (let j = -20; j < 20; j++) {
+        const f = farmAt(i, j);
+        if (f < 0) continue;
+        const b = city.get(i, j);
+        expect(b.interiors.map((it) => it.label)).toContain('FARMHOUSE');
+        // Silos and the grain leg stand well above the barn's ridge, on the horizon with the barn.
+        let top = 0;
+        for (let k = 0; k < b.faces.length; k += FACE_STRIDE) top = Math.max(top, b.faces[k + 1], b.faces[k + 4], b.faces[k + 7], b.faces[k + 10]);
+        expect(top).toBeGreaterThan(17);
+        if (f & FARM_GRAIN) grain++;
+        else dairy++;
+      }
+    }
+    expect(dairy).toBeGreaterThan(5);
+    expect(grain).toBeGreaterThan(5);
+  });
+
+  it('keeps trees, fences and poles off the roads, crossroads included', () => {
+    const city = new City();
+    let poles = 0, low = 0;
+    for (let i = CITY_HALF; i < CITY_HALF + 24; i++) {
+      for (let j = -12; j < 12; j++) {
+        const b = city.get(i, j);
+        for (let k = 0; k < b.poles.length; k += POLE_STRIDE, poles++) {
+          const x = b.poles[k], z = b.poles[k + 3];
+          // Clear of the gravel shoulder too.
+          expect(onRoad(x, z, 1.2), `pole at ${x.toFixed(1)}, ${z.toFixed(1)}`).toBe(false);
+        }
+        // Tree crowns and fence rails, not the wires strung high over the crossings.
+        for (const f of [b.faces, b.props]) {
+          for (let k = 0; k < f.length; k += FACE_STRIDE) {
+            if (Math.min(f[k + 1], f[k + 4], f[k + 7], f[k + 10]) > 6.5) continue;
+            low++;
+            const x0 = Math.min(f[k], f[k + 3], f[k + 6], f[k + 9]), x1 = Math.max(f[k], f[k + 3], f[k + 6], f[k + 9]);
+            const z0 = Math.min(f[k + 2], f[k + 5], f[k + 8], f[k + 11]), z1 = Math.max(f[k + 2], f[k + 5], f[k + 8], f[k + 11]);
+            for (let u = 0; u <= 1; u += 0.25) {
+              for (let v = 0; v <= 1; v += 0.25) {
+                const x = x0 + (x1 - x0) * u, z = z0 + (z1 - z0) * v;
+                expect(onRoad(x, z, 0), `face over the road at ${x.toFixed(1)}, ${z.toFixed(1)}`).toBe(false);
+              }
+            }
+          }
+        }
+      }
+    }
+    expect(poles).toBeGreaterThan(1000);
+    expect(low).toBeGreaterThan(1000);
+  });
+
+  it('puts farm cats by the roadside or in the farmhouse, not out in the crops', () => {
     const cats = new Cats(new City());
     let seen = 0;
     for (let i = CITY_HALF + 1; i < CITY_HALF + 17; i++) {
@@ -112,6 +207,7 @@ describe('out in the farmland', () => {
         const c = cats.catIn(i, j);
         if (!c) continue;
         seen++;
+        if (c.where === 'shop' && farmAt(i, j) >= 0) continue;
         expect(c.where).toBe('street');
         const toNS = Math.min(...[Math.floor(c.x / P), Math.floor(c.x / P) + 1].filter((n) => roadNS(n, j)).map((n) => Math.abs(c.x - n * P)), 99);
         const toEW = Math.min(...[Math.floor(c.z / P), Math.floor(c.z / P) + 1].filter((n) => roadEW(n, i)).map((n) => Math.abs(c.z - n * P)), 99);

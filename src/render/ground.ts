@@ -4,7 +4,9 @@ import {
   HOODS, H_DOCKS, H_DOWNTOWN, H_ESTATES, H_FARMLAND, H_JAPAN, H_MEDINA, H_OLDTOWN, H_PARIS, H_SEAFRONT, H_SUBURB,
   hoodAt, inCity, isBeach, roadEW, roadNS,
 } from '../world/hoods';
-import { CROP_CORN, CROP_HAY, CROP_PASTURE, CROP_PLOWED, CROP_SOY, FIELD_BLOCKS, ROWS_ALONG_X, fieldAt } from '../world/fields';
+import {
+  CROP_CORN, CROP_HAY, CROP_PASTURE, CROP_PLOWED, CROP_SOY, FARM, FIELD_BLOCKS, ROWS_ALONG_X, farmAt, farmD, farmU, fieldAt,
+} from '../world/fields';
 import {
   HALF, KIND_CITY, KIND_PARK, KIND_PLAZA, LAMP_OFF, LAMP_SPACING, LOT_EDGE, P, ROAD_HALF, blockKind, hasPond, isLandmark,
 } from '../world/layout';
@@ -146,8 +148,8 @@ export function groundCell(
     BK = BK + (0.62 - BK) * k;
   }
 
-  // No street lamps out in the country: the fields are dark at night.
-  const l = lampsOn > 0 && hood !== H_FARMLAND ? lampLight(ax, az, lx, lz) * lampsOn : 0;
+  // No street lamps out in the country: only the farms' yard lights, and the fields dark between them.
+  const l = lampsOn > 0 ? (hood === H_FARMLAND ? YARD : lampLight(ax, az, lx, lz)) * lampsOn : 0;
   if (l > 0) {
     const c = HOODS[hood].lamp;
     R += c[0] * 0.68 * l; G += c[1] * 0.6 * l; B += c[2] * 0.45 * l; BK += 0.3 * l;
@@ -397,6 +399,9 @@ const F_SIZE = FIELD_BLOCKS * P;
 /** Set by `country`: the cell is on a road along z (x constant) / along x, for the snow pass. */
 let CX = false;
 let CZ = false;
+/** Set by `country`: light from a farm's yard light on the cell, 0 to 1. */
+let YARD = 0;
+const YARD_R2 = 15 * 15;
 
 /**
  * Farmland: country roads along the section lines, gravel shoulders and a grass verge, then fields. The
@@ -405,6 +410,7 @@ let CZ = false;
 function country(
   bi: number, bj: number, X: number, Z: number, ax: number, az: number, sx: number, sz: number, lx: number, lz: number, fp: number,
 ): void {
+  YARD = 0;
   const nx = lx < HALF ? bi : bi + 1, nz = lz < HALF ? bj : bj + 1;
   const ns = roadNS(nx, bj), ew = roadEW(nz, bi);
   const nsCity = ns && (inCity(nx - 1, bj) || inCity(nx, bj));
@@ -420,6 +426,22 @@ function country(
     } else countryRoad(X, Z, ax, az, fp);
     return;
   }
+  const farm = farmAt(bi, bj);
+  let fu = 0, fd = 0;
+  if (farm >= 0) {
+    fu = farmU(farm, lx, lz);
+    fd = farmD(farm, lx, lz);
+    const du = fu - FARM.light[0], dd = fd - FARM.light[1], l2 = du * du + dd * dd;
+    if (l2 < YARD_R2) YARD = (1 - l2 / YARD_R2) * (1 - l2 / YARD_R2);
+    // The drive runs from the road over the shoulder and verge to the yard, grass growing between the ruts.
+    const off = fu - FARM.driveU;
+    if (off > -FARM.driveHalf && off < FARM.driveHalf && fd < FARM.yard[1] + 1) {
+      ZONE = Z_WALK;
+      if (off > -0.4 && off < 0.4 && fp < 0.6) grass(X, Z, fp);
+      else gravel(X, Z, 136, 124, 104);
+      return;
+    }
+  }
   const e = Math.min(ns ? ax - hx : 99, ew ? az - hz : 99);
   if (e < 1.2) {
     ZONE = Z_WALK;
@@ -429,6 +451,10 @@ function country(
   ZONE = Z_LOT;
   if (e < 3.5) {
     grass(X, Z, fp);
+    return;
+  }
+  if (farm >= 0) {
+    farmyard(X, Z, fp, fu, fd);
     return;
   }
   const fx = X - Math.floor(X / F_SIZE) * F_SIZE, fz = Z - Math.floor(Z / F_SIZE) * F_SIZE;
@@ -517,6 +543,20 @@ function field(X: number, Z: number, fp: number, f: number): void {
       R = 208 * q * wave; G = 174 * q * wave; B = 92 * q * wave; BK = 0.32;
     }
   }
+}
+
+/** A farmstead's ground, in its frame: packed earth in the yard, a mown lawn on the house's side of the drive, rough grass beyond. */
+function farmyard(X: number, Z: number, fp: number, u: number, d: number): void {
+  const [u0, d0, u1, d1] = FARM.yard;
+  if (u > u0 && u < u1 && d > d0 && d < d1) {
+    const h = hash2(Math.floor(X * 2), Math.floor(Z * 2));
+    const q = 0.86 + (h & 15) / 70;
+    GL = fp < 0.5 && (h & 7) < 2 ? G_COMMA : G_DOT;
+    R = 124 * q; G = 108 * q; B = 84 * q; BK = 0.34;
+    return;
+  }
+  if (u < FARM.driveU) lawn(X, Z, fp, 1, false);
+  else grass(X, Z, fp);
 }
 
 function grass(X: number, Z: number, fp: number): void {

@@ -27,7 +27,7 @@ changes under `server/` or `src/net/`, also `cd server && npm run typecheck`.
 |---|---|
 | `src/main.ts` | Wiring: settings, input, main loop, HUD, photo/GIF, sharing, tour, resume. The only file that knows about everything. |
 | `src/render/` | Frame buffer, camera, rasterizer (`raster.ts`), per-material shading (`materials.ts`, `facades.ts`, `interiors.ts`), ground and sky (`ground.ts`, `background.ts`), lighting and fog (`surface.ts`, `daylight.ts`), presenters (`presenter.ts`), rain and snow. |
-| `src/world/` | City generation (`city.ts`, `build.ts`, `styles/*` per district, the Glyph Tower in `styles/downtown.ts`), districts, the city's edge and the road network (`hoods.ts`), the farmland's crops (`fields.ts`, `styles/farmland.ts`), interiors and furniture, traffic and the taxi cabin you ride in (`cabin.ts`), pedestrians, signals, the monorail (`loop.ts` for lines, stations, timetable and stairs; `train.ts` draws trains, stations and the car you ride in), cats, night market, fireworks, event schedule (`events.ts`). |
+| `src/world/` | City generation (`city.ts`, `build.ts`, `styles/*` per district, the Glyph Tower in `styles/downtown.ts`), districts, the city's edge and the road network (`hoods.ts`), the farmland's crops and farmsteads (`fields.ts` places them, `styles/farmland.ts` builds them), interiors and furniture, traffic and the taxi cabin you ride in (`cabin.ts`), pedestrians, signals, the monorail (`loop.ts` for lines, stations, timetable and stairs; `train.ts` draws trains, stations and the car you ride in), cats, night market, fireworks, event schedule (`events.ts`). |
 | `src/audio/` | `sound.ts` (all ambience and effects) and `radio.ts` (generated music), Web Audio only. |
 | `src/game/` | Player and camera modes, keyboard/mouse input, touch controls, auto tour. |
 | `src/ui/` | HUD panel, settings persistence, quality ladder, photo mode, GIF encoder, share links, resume, PWA install, toasts, usage counts (`analytics.ts`). |
@@ -70,7 +70,8 @@ glow (lamps, signs, windows at night).
  a whole number of monorail cells and regions; everything outside it is `FARMLAND`, with a country road only on
  every region line. Streets are no longer on every grid line: anything that drives or walks asks `roadNS`,
  `roadEW` and `signalled`, and pedestrians, stations and trains stay in the city. A unit test pins every region's
- district inside the city, so a change that moves one fails.
+ district inside the city, so a change that moves one fails. A farmstead's layout is the `FARM` table in
+ `world/fields.ts`, shared by its builder, the ground painter (lawn, drive, yard) and the map: move things there.
 - **Monorail.** The city is tiled with cells of `LOOP_BLOCKS` blocks, each with one loop line one block inside its
  edge (`world/loop.ts`); blocks draw the beams along their edges (`addMonorail` in `city.ts`), and stations sit
  mid-block over the road, with the stairs on the gutter so pedestrians and cars pass beside them. Trains follow one

@@ -1,7 +1,7 @@
 import type { FrameBuffer } from './framebuffer';
 import type { World } from '../world/world';
 import { glyph } from '../core/charset';
-import { fieldAt } from '../world/fields';
+import { FARM, farmAt, farmD, farmU, fieldAt } from '../world/fields';
 import {
   HOODS, HOOD_BLOCKS, H_DOCKS, H_DOWNTOWN, H_FARMLAND, H_JAPAN, REGION, hoodAt, hoodOfRegion, isBeach, roadEW, roadNS,
 } from '../world/hoods';
@@ -32,6 +32,8 @@ const G_PLUS = glyph('+');
 const G_EQ = glyph('=');
 const G_HASH = glyph('#');
 const G_QUOTE = glyph('"');
+const G_COLON = glyph(':');
+const G_DOT = glyph('.');
 const G_TILDE = glyph('~');
 const G_o = glyph('o');
 const G_STAR = glyph('*');
@@ -148,8 +150,13 @@ function terrain(v: MapView, n: Inner): void {
       const onZ = nearZ && (!rural || roadEW(Math.round(Z / P), bi));
       const col = n.c0 + c, row = n.r0 + r;
       if (rural && !onX && !onZ) {
-        const k = CROP_MAP[fieldAt(bi, bj) & 7];
-        set(col, row, k[0], k[1], k[2], k[3], k[1] * 0.25, k[2] * 0.25, k[3] * 0.25);
+        const farm = farmAt(bi, bj);
+        if (farm >= 0) {
+          farmCell(col, row, farmU(farm, lx, lz), farmD(farm, lx, lz));
+        } else {
+          const k = CROP_MAP[fieldAt(bi, bj) & 7];
+          set(col, row, k[0], k[1], k[2], k[3], k[1] * 0.25, k[2] * 0.25, k[3] * 0.25);
+        }
         continue;
       }
       if (onX || onZ) {
@@ -178,6 +185,19 @@ function terrain(v: MapView, n: Inner): void {
       }
     }
   }
+}
+
+function inside(r: readonly [number, number, number, number], u: number, d: number): boolean {
+  return u > r[0] && u < r[2] && d > r[1] && d < r[3];
+}
+
+/** A farmstead on the map, from its frame: the red barn, the white house, the drive and the yard. */
+function farmCell(col: number, row: number, u: number, d: number): void {
+  if (inside(FARM.barn, u, d)) set(col, row, G_DARK, 205, 64, 52, 72, 20, 16);
+  else if (inside(FARM.house, u, d)) set(col, row, G_DARK, 232, 228, 216, 70, 68, 62);
+  else if (Math.abs(u - FARM.driveU) < FARM.driveHalf && d < FARM.yard[1]) set(col, row, G_COLON, 160, 148, 126, 40, 36, 30);
+  else if (inside(FARM.yard, u, d)) set(col, row, G_DOT, 172, 150, 120, 44, 38, 30);
+  else set(col, row, G_QUOTE, 80, 170, 80, 16, 40, 18);
 }
 
 /** District names, placed on the block just north-east of each district's central crossroads. */

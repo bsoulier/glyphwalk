@@ -20,8 +20,10 @@ about 90 kB of gzipped JavaScript.
   houses, lawns and picket fences of Maple Heights, the hedged mansions and pools of Silver Hills, the pastel Art Deco
   hotels and beach of the Seafront, and the domes, minarets and souks of the Medina.
 - **Walk out of town.** The city stops about 1.5 km out from the tower, and farmland runs on from there: corn,
-  soybeans, wheat rippling in the wind, pasture and hay, with country roads round every section, utility poles,
-  windbreaks and lone oaks. At night the fields go dark and the city glows on the horizon.
+  soybeans, wheat rippling in the wind, pasture and hay with cattle grazing, country roads round every section, utility
+  poles, windbreaks and lone oaks. Every few hundred metres a farmstead stands by the road: a white farmhouse you can
+  walk into, a red barn, and either a dairy's silos and paddock or a grain farm's bins and machine shed. At night the
+  fields go dark, the farms' yard lights come on, and the city glows on the horizon.
 - **Ride up the Glyph Tower**, a 480 m landmark downtown: walk into the lobby, take the express lift, and look out over
   the whole city from the glass observation deck, then one more stop up to the open roof, with nothing overhead but
   the sky and the spire. It stays on the skyline wherever you are, so you can steer by it, or press `K` (or pick it in
