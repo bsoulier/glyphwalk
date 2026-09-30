@@ -4,6 +4,7 @@ import { M_CONCRETE, M_PAINT, M_SIGN } from '../render/materials';
 import { glyph } from '../core/charset';
 import { hash3 } from '../core/hash';
 import { FACE_STRIDE } from './faces';
+import { signalled } from './hoods';
 import { P, worldSeed } from './layout';
 import { SIGN_CHAR_W, SIGN_H, SIGN_PAD, TEXT_STOP, TEXT_WALK, signSeed } from './signs';
 
@@ -95,7 +96,7 @@ export function drawSignals(cam: Camera, t: number): void {
     for (let j = j0; j <= j1; j++) {
       const ix = i * P, iz = j * P;
       const d = Math.hypot(ix - cam.x, iz - cam.z);
-      if (d > DRAW_DIST || !sphereVisible(ix, 3, iz, 16)) continue;
+      if (d > DRAW_DIST || !signalled(i, j) || !sphereVisible(ix, 3, iz, 16)) continue;
       const ph = signalPhase(i, j, t);
       const near = d < DETAIL_DIST;
       const walk = walkWindow(ph) > 0;

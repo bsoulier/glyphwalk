@@ -2,8 +2,12 @@ import type { Camera } from '../render/camera';
 import { drawBoxYaw, drawVLine, sphereVisible, stats } from '../render/raster';
 import { M_CLOTH, M_SKIN } from '../render/materials';
 import { glyph } from '../core/charset';
+import { inCity } from './hoods';
 import { P } from './layout';
 import { signalPhase, walkWindow } from './signals';
+
+/** Block index for a pedestrian with no city sidewalk in reach, far outside any view. */
+const AWAY = 1 << 20;
 
 /** Brisk pace on the crosswalk, fast enough to clear the widest crossing within one walk window. */
 const CROSS_SPEED = 2.2;
@@ -72,8 +76,13 @@ export class Pedestrians {
   }
 
   private spawn(p: Ped, cx: number, cz: number, reach: number): void {
-    p.bi = Math.floor(cx / P) + Math.floor(Math.random() * (reach * 2 + 1)) - reach;
-    p.bj = Math.floor(cz / P) + Math.floor(Math.random() * (reach * 2 + 1)) - reach;
+    // People walk the city's sidewalks; out in the fields there are none, so they wait far off for the city.
+    for (let k = 0; k < 8; k++) {
+      p.bi = Math.floor(cx / P) + Math.floor(Math.random() * (reach * 2 + 1)) - reach;
+      p.bj = Math.floor(cz / P) + Math.floor(Math.random() * (reach * 2 + 1)) - reach;
+      if (inCity(p.bi, p.bj)) break;
+      p.bi = p.bj = AWAY;
+    }
     p.off = 7.4 + Math.random() * 1.8;
     p.s = Math.random() * 4 * (P - 2 * p.off);
     p.dir = Math.random() < 0.5 ? 1 : -1;
@@ -122,9 +131,9 @@ export class Pedestrians {
         p.s += p.dir * p.speed * dt;
         if (Math.floor(p.s / L) !== prevSide) {
           const side = ((prevSide % 4) + 4) % 4;
-          if (Math.random() < 0.35) {
+          const ddx = DX[side] * p.dir, ddz = DZ[side] * p.dir;
+          if (Math.random() < 0.35 && inCity(p.bi + ddx, p.bj + ddz)) {
             const corner = p.dir > 0 ? (side + 1) & 3 : side;
-            const ddx = DX[side] * p.dir, ddz = DZ[side] * p.dir;
             p.ax = p.bi * P + cornerX(corner, p.off);
             p.az = p.bj * P + cornerZ(corner, p.off);
             p.bx = p.ax + ddx * 2 * p.off;

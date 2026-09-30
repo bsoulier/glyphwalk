@@ -10,8 +10,8 @@ import type { Settings } from './settings';
 
 export interface HudHandlers {
   onHood(hood: number): void;
-  /** Go to the Glyph Tower: its observation deck, or its doors. */
-  onTower(deck: boolean): void;
+  /** Go to the Glyph Tower: its open roof, its observation deck, or its doors. */
+  onTower(where: TowerSpot): void;
   onCell(id: string): void;
   onFps(fps: number): void;
   onDist(dist: number): void;
@@ -44,9 +44,13 @@ function $(id: string): HTMLElement {
   return el;
 }
 
-/** Values of the Glyph Tower entries in the district list. */
-const TOWER_DECK = 'tower-deck';
-const TOWER_DOOR = 'tower-door';
+export type TowerSpot = 'roof' | 'deck' | 'door';
+
+/** Glyph Tower entries in the district list; their values are `tower-` and the spot. */
+const TOWER_SPOTS: readonly [TowerSpot, string][] = [
+  ['roof', 'GLYPH TOWER: open roof'], ['deck', 'GLYPH TOWER: observation deck'], ['door', 'GLYPH TOWER: entrance'],
+];
+const TOWER = 'tower-';
 
 function fill(sel: HTMLSelectElement, options: readonly [string, string][]): void {
   sel.innerHTML = '';
@@ -97,9 +101,9 @@ export class Hud {
     // The landmark is picked from the same list as the districts, because that is where people look for places.
     const landmark = document.createElement('optgroup');
     landmark.label = 'Landmark';
-    for (const [value, label] of [[TOWER_DECK, 'GLYPH TOWER: top deck'], [TOWER_DOOR, 'GLYPH TOWER: entrance']]) {
+    for (const [spot, label] of TOWER_SPOTS) {
       const o = document.createElement('option');
-      o.value = value;
+      o.value = TOWER + spot;
       o.textContent = label;
       landmark.append(o);
     }
@@ -116,7 +120,7 @@ export class Hud {
       });
     };
     bind(this.hood, (v) => {
-      if (v === TOWER_DECK || v === TOWER_DOOR) handlers.onTower(v === TOWER_DECK);
+      if (v.startsWith(TOWER)) handlers.onTower(v.slice(TOWER.length) as TowerSpot);
       else handlers.onHood(Number(v));
     });
     bind(this.cell, (v) => handlers.onCell(v));
@@ -233,7 +237,7 @@ export class Hud {
     this.countsKey = key;
     const by = new Map(counts ?? []);
     for (const o of this.hood.options) {
-      if (o.value === TOWER_DECK || o.value === TOWER_DOOR) continue;
+      if (o.value.startsWith(TOWER)) continue;
       const k = Number(o.value), n = by.get(k) ?? 0;
       o.textContent = n > 0 ? `${HOODS[k].name} (${n} online)` : HOODS[k].name;
     }

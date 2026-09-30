@@ -5,8 +5,8 @@ import {
   cypress, fenceRun, flat, fountain, gableRoof, hipRoof, jitter, park, parkedCar, pick, plotFrame, sideOf, solidBox, tree, wallSign,
 } from '../build';
 import { BOX_BOTTOM, BOX_SIDES, BOX_TOP } from '../faces';
-import { BEDROOM, LIVING, LOUNGE } from '../furniture';
-import { enterable } from '../interior';
+import { LIBRARY, MASTER_SUITE, OPEN_PLAN, SALON } from '../furniture';
+import { doorCentre, enterable } from '../interior';
 import { KIND_PARK } from '../layout';
 import { SIGNS_ESTATES, WARM_SIGNS, type RGB } from '../signs';
 
@@ -24,14 +24,15 @@ export function buildEstates(B: Builder, i: number, j: number, kind: number, lot
     return;
   }
   const side = Math.floor(B.rng() * 4);
-  mansion(B, plotFrame(lot, side), side, B.alt() < 0.6);
+  mansion(B, plotFrame(lot, side), side);
 }
 
 /**
  * One house per block behind a tall hedge: a gated gravel drive lined with cypresses leads to a
  * fountain forecourt, the house (classical or modern) sits mid-plot and the pool is behind it.
+ * Every house can be entered, since it is the only one in its block.
  */
-function mansion(B: Builder, f: PlotFrame, side: number, enter: boolean): void {
+function mansion(B: Builder, f: PlotFrame, side: number): void {
   const { rng, faces } = B;
   const { W, D } = f;
   const mid = W / 2;
@@ -86,18 +87,15 @@ function mansion(B: Builder, f: PlotFrame, side: number, enter: boolean): void {
   const hw = classical ? 22 : 24;
   const d0 = court1 + 1.2, d1 = d0 + 12.8;
   const main = f.rect(mid - hw / 2, d0, mid + hw / 2, d1);
-  const programs = [LIVING, LOUNGE, BEDROOM] as const;
   const body = (r: Rect, hh: number, cap: number) => {
     faces.box(r.x0, 0, r.z0, r.x1, hh, r.z1, M_WALL, c[0], c[1], c[2], seed, M_ROOF, cap);
     B.colliders.push(r.x0, r.z0, r.x1, r.z1);
   };
   if (classical) {
-    if (enter) {
-      enterable(B, {
-        rect: main, side, h, mat: M_WALL, color: c, seed, capMat: M_ROOF, mask: BOX_SIDES,
-        doorW: 2, label: 'MANSION', sign: -1, open: false, canopy: false, programs, text: -1,
-      });
-    } else body(main, h, BOX_SIDES);
+    enterable(B, {
+      rect: main, side, h, mat: M_WALL, color: c, seed, capMat: M_ROOF, mask: BOX_SIDES,
+      doorW: 2, label: 'MANSION', sign: -1, open: false, canopy: false, programs: [SALON, LIBRARY, MASTER_SUITE], text: -1,
+    });
     const roof = pick(rng, ROOFS);
     hipRoof(faces, main, h, 3.6, 6, 0.6, M_TILES, roof, 0, M_TILES, true);
     // Lower wings either side.
@@ -107,14 +105,16 @@ function mansion(B: Builder, f: PlotFrame, side: number, enter: boolean): void {
       body(wing, h - fh, BOX_SIDES);
       hipRoof(faces, wing, h - fh, 2.4, 3, 0.5, M_TILES, roof, 0, M_TILES, true);
     }
-    // Portico: columns under a pediment, in front of the door.
-    const pd0 = d0 - 3, cols = [-3.3, -1.1, 1.1, 3.3];
+    // Portico: columns under a pediment, centred on the door (which sits on a window bay, not quite
+    // mid-facade), with the middle bay wide enough to clear the door and its lit frame.
+    const uc = mid - hw / 2 + doorCentre(seed, hw);
+    const pd0 = d0 - 3, cols = [-3.3, -1.5, 1.5, 3.3];
     for (const u of cols) {
-      const [x, z] = f.pt(mid + u, pd0 + 0.4);
+      const [x, z] = f.pt(uc + u, pd0 + 0.4);
       B.poles.push(x, 0, h - 0.6, z, 0.26, STONE[0], STONE[1], STONE[2], G_PIPE, M_CONCRETE);
       B.colliders.push(x - 0.26, z - 0.26, x + 0.26, z + 0.26);
     }
-    const por = f.rect(mid - 4.2, pd0, mid + 4.2, d0);
+    const por = f.rect(uc - 4.2, pd0, uc + 4.2, d0);
     B.faces.box(por.x0, h - 0.6, por.z0, por.x1, h, por.z1, M_CONCRETE, STONE[0], STONE[1], STONE[2], 0, M_CONCRETE, BOX_SIDES | BOX_BOTTOM);
     gableRoof(faces, por, h, 1.8, f.alongX, 0.2, M_TILES, roof, 0, M_CONCRETE, STONE, 0);
     B.maxH = Math.max(B.maxH, h + 4);
@@ -123,12 +123,10 @@ function mansion(B: Builder, f: PlotFrame, side: number, enter: boolean): void {
     const shift = rng() < 0.5 ? -4 : 4;
     const lower = main;
     const upper = f.rect(mid - hw / 2 + 5 + shift, d0 - 1.5, mid + hw / 2 - 5 + shift, d1 - 1);
-    if (enter) {
-      enterable(B, {
-        rect: lower, side, h: fh, mat: M_WALL, color: c, seed, capMat: M_ROOF, mask: BOX_SIDES | BOX_TOP,
-        doorW: 2, label: 'VILLA', sign: -1, open: false, canopy: false, programs: [LOUNGE, null, null], text: -1,
-      });
-    } else body(lower, fh, BOX_SIDES | BOX_TOP);
+    enterable(B, {
+      rect: lower, side, h: fh, mat: M_WALL, color: c, seed, capMat: M_ROOF, mask: BOX_SIDES | BOX_TOP,
+      doorW: 2, label: 'VILLA', sign: -1, open: false, canopy: false, programs: [OPEN_PLAN, null, null], text: -1,
+    });
     faces.box(upper.x0, fh, upper.z0, upper.x1, h, upper.z1, M_WALL, c[0], c[1], c[2], seed, M_ROOF, BOX_SIDES | BOX_TOP | BOX_BOTTOM);
     const { x0, z0, x1, z1 } = upper, t = 0.05;
     for (const [a, b, e, g] of [[x0, z0, x1, z0 + t], [x0, z1 - t, x1, z1], [x0, z0, x0 + t, z1], [x1 - t, z0, x1, z1]]) {

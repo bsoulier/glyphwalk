@@ -2,10 +2,10 @@ import type { Camera } from '../render/camera';
 import { drawBoxYaw, drawFace, drawPoint, sphereVisible } from '../render/raster';
 import { FLOOR_H, facadeOf, facadeWindows } from '../render/facades';
 import { FLOOR_CARPET } from '../render/interiors';
-import { M_CEILING, M_FLOOR, M_GLOW, M_PAINT, M_PLASTER, M_SIGN } from '../render/materials';
+import { M_CEILING, M_FLOOR, M_GLOW, M_PAINT, M_PLASTER, M_RAIL, M_SIGN } from '../render/materials';
 import { glyph } from '../core/charset';
 import { hash2, mulberry32 } from '../core/hash';
-import { type Builder, type Rect, type Side, LIGHT_LAMP, sideOf } from './build';
+import { type Builder, type Rect, type Side, G_PIPE, LIGHT_LAMP, sideOf } from './build';
 import { BOX_E, BOX_N, BOX_S, BOX_W, FACE_STRIDE, FaceList } from './faces';
 import { type Program, Room } from './furniture';
 import { EYE_H } from './layout';
@@ -26,6 +26,9 @@ const LIFT_OPEN_H = 2.3;
 const CAB_H = 2.45;
 /** From this close the lobby is drawn behind the door; further away a lit panel stands in for it. */
 const LOOK_IN = 32;
+/** Height of the lift's housing above a roof level, clear of the cab's own ceiling (CAB_H). */
+const HUT_H = 3.0;
+const RAIL: RGB = [200, 206, 216];
 
 export interface Level {
   y: number;
@@ -37,6 +40,8 @@ export interface Level {
   /** Room program name (e.g. 'CAFE') and its floor pattern, for sound. */
   room: string;
   floor: number;
+  /** Open to the sky (a roof): rain falls on it and it sounds like outdoors. */
+  open: boolean;
   faces: Float32Array;
   lights: Float32Array;
   people: Float32Array;
@@ -88,6 +93,8 @@ export interface EnterSpec {
   canopy: boolean;
   /** Ground, middle and top floor; null skips that level. */
   programs: readonly [Program, Program | null, Program | null];
+  /** An open-air level on the roof, served by the lift too: no ceiling, a railing round the edge. */
+  roof?: Program;
   /** The shop's sign text, reused on its menu board. */
   text: number;
 }
@@ -258,13 +265,16 @@ export function enterable(B: Builder, spec: EnterSpec): void {
   if (spec.programs[2] && floors > 1) ks.push({ k: floors - 1, p: spec.programs[2] });
   const hasLift = ks.length > 1 && D > LIFT_DEPTH + 5;
   if (!hasLift) ks.length = 1;
+  const roof = hasLift ? spec.roof ?? null : null;
+  const storeys = ks.map(({ k, p }) => ({ k, p, y: k * fh, open: false }));
+  if (roof) storeys.push({ k: floors, p: roof, y: h, open: true });
 
   // Wide lobbies get the lift straight across from the door; narrow houses tuck it into a back corner.
   const ca = W >= 9 ? uc - WALL_T : W - LIFT_HALF - LIFT_WALL;
   const la0 = ca - LIFT_HALF, la1 = ca + LIFT_HALF, ld0 = D - LIFT_DEPTH;
   const liftLocal = [la0 - LIFT_WALL, ld0 - LIFT_WALL, la1 + LIFT_WALL, D] as const;
   const shaftRect = hasLift ? toWorld(...liftLocal) : null;
-  const topCeil = (ks[ks.length - 1].k + 1) * fh - SLAB;
+  const topCeil = roof ? h + HUT_H : (ks[ks.length - 1].k + 1) * fh - SLAB;
 
   // --- colliders: thin walls with a gap at the door, instead of the whole footprint ---
   const T = WALL_T + 0.05;
@@ -291,25 +301,35 @@ export function enterable(B: Builder, spec: EnterSpec): void {
   if (hasLift) {
     const W_ = LIFT_WALL;
     const band = Math.round(fh * 100);
-    const wv = (a0: number, d0: number, a1: number, d1: number, y0: number, y1: number, na: number, nd: number, c: RGB, seed = 0) => {
+    const wv = (a0: number, d0: number, a1: number, d1: number, y0: number, y1: number, na: number, nd: number, c: RGB, seed = 0, L = shaft) => {
       const p = toWorld(a0, d0, a0, d0), q = toWorld(a1, d1, a1, d1);
-      vquad(shaft, p.x0, p.z0, q.x0, q.z0, y0, y1, ax * na + dx * nd, az * na + dz * nd, y0, M_PLASTER, c, seed);
+      vquad(L, p.x0, p.z0, q.x0, q.z0, y0, y1, ax * na + dx * nd, az * na + dz * nd, y0, M_PLASTER, c, seed);
     };
     const inner: RGB = [120, 124, 130], outer: RGB = spec.programs[0].wall;
-    wv(la0 - W_, ld0 - W_, la0 - W_, D, 0, topCeil, -1, 0, outer);
+    // Outside the shaft, walls above a roof belong to the building (seen from anywhere), not the interior.
+    const outTop = roof ? h : topCeil;
+    wv(la0 - W_, ld0 - W_, la0 - W_, D, 0, outTop, -1, 0, outer);
     wv(la0, ld0, la0, D, 0, topCeil, 1, 0, inner, band);
-    wv(la1 + W_, ld0 - W_, la1 + W_, D, 0, topCeil, 1, 0, outer);
+    wv(la1 + W_, ld0 - W_, la1 + W_, D, 0, outTop, 1, 0, outer);
     wv(la1, ld0, la1, D, 0, topCeil, -1, 0, inner, band);
     wv(la0, D, la1, D, 0, topCeil, 0, -1, inner, band);
-    const holes = ks.map(({ k }): Hole => [ca - LIFT_OPEN, ca + LIFT_OPEN, k * fh, k * fh + LIFT_OPEN_H]);
-    holedWall((u0, u1, y0, y1) => wv(u0, ld0 - W_, u1, ld0 - W_, y0, y1, 0, -1, outer), la0 - W_, la1 + W_, 0, topCeil, holes);
+    const holes = storeys.map(({ y }): Hole => [ca - LIFT_OPEN, ca + LIFT_OPEN, y, y + LIFT_OPEN_H]);
+    holedWall((u0, u1, y0, y1) => wv(u0, ld0 - W_, u1, ld0 - W_, y0, y1, 0, -1, outer), la0 - W_, la1 + W_, 0, outTop, holes);
     holedWall((u0, u1, y0, y1) => wv(u0, ld0, u1, ld0, y0, y1, 0, 1, inner, band), la0, la1, 0, topCeil, holes);
-    for (const { k } of ks) {
-      const y = k * fh;
+    for (const { y } of storeys) {
       wv(ca - LIFT_OPEN, ld0 - W_, ca - LIFT_OPEN, ld0, y, y + LIFT_OPEN_H, 1, 0, LIFT_STEEL);
       wv(ca + LIFT_OPEN, ld0 - W_, ca + LIFT_OPEN, ld0, y, y + LIFT_OPEN_H, -1, 0, LIFT_STEEL);
     }
     hquad(shaft, toWorld(la0, ld0, la1, D), topCeil, false, M_CEILING, [200, 210, 220], 0);
+    if (roof) {
+      // The lift's housing on the roof, out to the facade line, with its door toward the front.
+      const e = D + WALL_T;
+      wv(la0 - W_, ld0 - W_, la0 - W_, e, h, topCeil, -1, 0, outer, 0, B.faces);
+      wv(la1 + W_, ld0 - W_, la1 + W_, e, h, topCeil, 1, 0, outer, 0, B.faces);
+      wv(la0 - W_, e, la1 + W_, e, h, topCeil, 0, 1, outer, 0, B.faces);
+      holedWall((u0, u1, y0, y1) => wv(u0, ld0 - W_, u1, ld0 - W_, y0, y1, 0, -1, outer, 0, B.faces), la0 - W_, la1 + W_, h, topCeil, holes);
+      hquad(B.faces, toWorld(la0 - W_, ld0 - W_, la1 + W_, e), topCeil, true, M_PAINT, RAIL, 0);
+    }
     for (const [a0, d0, a1, d1] of [
       [la0 - W_, ld0 - W_, la0, D], [la1, ld0 - W_, la1 + W_, D],
       [la0 - W_, ld0 - W_, ca - LIFT_OPEN, ld0], [ca + LIFT_OPEN, ld0 - W_, la1 + W_, ld0],
@@ -326,11 +346,11 @@ export function enterable(B: Builder, spec: EnterSpec): void {
   const levels: Level[] = [];
   const innerRect: Rect = { x0: r.x0 + WALL_T, z0: r.z0 + WALL_T, x1: r.x1 - WALL_T, z1: r.z1 - WALL_T };
   const back = (side + 2) & 3;
-  for (const { k, p } of ks) {
-    const y = k * fh, ceil = (k + 1) * fh - SLAB;
+  for (const { k, p, y, open } of storeys) {
+    const ceil = open ? y + HUT_H : (k + 1) * fh - SLAB;
     const L = new FaceList();
     const lights: number[] = [];
-    for (let sd = 0; sd < 4; sd++) {
+    for (let sd = 0; sd < 4 && !open; sd++) {
       const ss = sideOf(r, sd);
       const holes: Hole[] = [];
       const wr = k === 0 ? fw.ground : fw.upper;
@@ -353,7 +373,7 @@ export function enterable(B: Builder, spec: EnterSpec): void {
     }
     for (const q of minus(innerRect, shaftRect)) {
       hquad(L, q, y + 0.02, true, M_FLOOR, p.floorC, p.floor);
-      hquad(L, q, ceil, false, M_CEILING, p.light, 0);
+      if (!open) hquad(L, q, ceil, false, M_CEILING, p.light, 0);
     }
     const room = new Room(
       { ox, oz, ax, az, dx, dz, W, D, y: y + 0.02, H: ceil - y - 0.02 },
@@ -365,15 +385,26 @@ export function enterable(B: Builder, spec: EnterSpec): void {
       room.box(ca + LIFT_OPEN + 0.15, ld0 - LIFT_WALL - 0.04, ca + LIFT_OPEN + 0.3, ld0 - LIFT_WALL, 1.05, 1.25, M_GLOW, [255, 200, 120]);
     }
     p.build(room);
-    const name = k === 0 ? 'GROUND' : k === floors - 1 ? `TOP FLOOR ${k}` : `FLOOR ${k}`;
-    levels.push({ y, h: ceil - y, k, name: `${name} - ${p.name}`, room: p.name, floor: p.floor, faces: L.toArray(), lights: new Float32Array(lights), people: new Float32Array(room.people) });
+    const name = open ? 'ROOF' : k === 0 ? 'GROUND' : k === floors - 1 ? `TOP FLOOR ${k}` : `FLOOR ${k}`;
+    levels.push({ y, h: ceil - y, k, name: `${name} - ${p.name}`, room: p.name, floor: p.floor, open, faces: L.toArray(), lights: new Float32Array(lights), people: new Float32Array(room.people) });
+  }
+  if (roof) {
+    // Railing round the roof edge, part of the building so it shows from anywhere; the wall colliders
+    // already stop walkers short of it.
+    for (let sd = 0; sd < 4; sd++) {
+      const ss = sideOf(r, sd);
+      for (const y of [h + 0.5, h + 1.05]) sideBox(B.props, ss, 0, ss.len, -0.12, -0.06, y, y + 0.06, M_RAIL, RAIL);
+      for (let u = 1; u < ss.len; u += 2) {
+        B.poles.push(ss.p0x + ss.tx * u - ss.nx * 0.09, h, h + 1.1, ss.p0z + ss.tz * u - ss.nz * 0.09, 0.03, RAIL[0], RAIL[1], RAIL[2], G_PIPE, M_RAIL);
+      }
+    }
   }
 
   const plug = new FaceList();
   vquad(plug, px(t0) + ix, pz(t0) + iz, px(t1) + ix, pz(t1) + iz, 0, DOOR_H, s.nx, s.nz, 0, M_GLOW, [150, 120, 80], 0);
 
   B.interiors.push({
-    x0: r.x0, z0: r.z0, x1: r.x1, z1: r.z1, top: h, label: spec.label, levels,
+    x0: r.x0, z0: r.z0, x1: r.x1, z1: r.z1, top: roof ? h + HUT_H : h, label: spec.label, levels,
     shaft: shaft.toArray(), lift, liftDoor, plug: plug.toArray(),
     door: { x: px(uc) + ix / 2, z: pz(uc) + iz / 2, tx: s.tx, tz: s.tz, nx: s.nx, nz: s.nz, w: doorW },
   });

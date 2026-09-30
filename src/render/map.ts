@@ -1,9 +1,12 @@
 import type { FrameBuffer } from './framebuffer';
 import type { World } from '../world/world';
 import { glyph } from '../core/charset';
-import { HOODS, HOOD_BLOCKS, H_DOCKS, H_DOWNTOWN, H_JAPAN, REGION, hoodAt, hoodOfRegion, isBeach } from '../world/hoods';
+import { fieldAt } from '../world/fields';
+import {
+  HOODS, HOOD_BLOCKS, H_DOCKS, H_DOWNTOWN, H_FARMLAND, H_JAPAN, REGION, hoodAt, hoodOfRegion, isBeach, roadEW, roadNS,
+} from '../world/hoods';
 import { HALF, KIND_CITY, KIND_PARK, LOT_EDGE, P, ROAD_HALF, blockKind, hasPond } from '../world/layout';
-import { CARS, CAR_LEN, TRAINS, carPoint, cellOf, onLoopLine, stationsOf, trainState } from '../world/loop';
+import { CARS, CAR_LEN, TRAINS, carPoint, cellOf, hasLoop, onLoopLine, stationsOf, trainState } from '../world/loop';
 import { KIND_POLICE, KIND_TAXI } from '../world/traffic';
 
 /** A map panel on the character grid. The rectangle includes its one-cell border. */
@@ -38,6 +41,11 @@ const G_S = glyph('S');
 const G_DARK = glyph('▓');
 const G_FULL = glyph('█');
 const ARROWS = ['^', '/', '>', '\\', 'v', '/', '<', '\\'].map((c) => glyph(c));
+/** Glyph and colour of each crop on the map, in CROP_* order. */
+const CROP_MAP: readonly (readonly [number, number, number, number])[] = [
+  [G_QUOTE, 96, 170, 64], [glyph(','), 70, 140, 60], [glyph(','), 220, 190, 100],
+  [G_QUOTE, 90, 190, 90], [glyph('.'), 180, 190, 100], [G_TILDE, 150, 110, 70],
+];
 
 const FRAME: readonly [number, number, number] = [125, 255, 176];
 const FRAME_BG: readonly [number, number, number] = [2, 10, 6];
@@ -127,14 +135,23 @@ function terrain(v: MapView, n: Inner): void {
     const bj = Math.floor(Z / P);
     const lz = Z - bj * P;
     const az = Math.abs(lz < HALF ? lz : lz - P);
-    const onZ = az < hz;
+    const nearZ = az < hz;
     for (let c = 0; c < n.w; c++) {
       const X = v.cx + (c + 0.5 - n.w / 2) * v.mpc;
       const bi = Math.floor(X / P);
       const lx = X - bi * P;
       const ax = Math.abs(lx < HALF ? lx : lx - P);
-      const onX = ax < hx;
+      const hood = hoodAt(bi, bj);
+      // Out in the farmland only some grid lines are roads; the rest is fields, drawn by crop.
+      const rural = hood === H_FARMLAND;
+      const onX = ax < hx && (!rural || roadNS(Math.round(X / P), bj));
+      const onZ = nearZ && (!rural || roadEW(Math.round(Z / P), bi));
       const col = n.c0 + c, row = n.r0 + r;
+      if (rural && !onX && !onZ) {
+        const k = CROP_MAP[fieldAt(bi, bj) & 7];
+        set(col, row, k[0], k[1], k[2], k[3], k[1] * 0.25, k[2] * 0.25, k[3] * 0.25);
+        continue;
+      }
       if (onX || onZ) {
         if (onLoopLine(X, Z, Math.max(hx, hz))) set(col, row, onX && onZ ? G_PLUS : onX ? G_PIPE : G_EQ, 235, 110, 96, 44, 16, 16);
         else set(col, row, onX && onZ ? G_PLUS : onX ? G_PIPE : G_DASH, 105, 105, 118, 16, 16, 22);
@@ -144,7 +161,6 @@ function terrain(v: MapView, n: Inner): void {
         set(col, row, G_SPACE, 0, 0, 0, 38, 38, 44);
         continue;
       }
-      const hood = hoodAt(bi, bj);
       const m = HOODS[hood].map;
       const kind = blockKind(bi, bj);
       if (isBeach(bi, bj)) {
@@ -172,7 +188,10 @@ function labels(v: MapView, n: Inner): void {
   const rj0 = Math.floor((v.cz - halfH) / REGION), rj1 = Math.floor((v.cz + halfH) / REGION);
   for (let ri = ri0; ri <= ri1; ri++) {
     for (let rj = rj0; rj <= rj1; rj++) {
-      const h = HOODS[hoodOfRegion(ri, rj)];
+      const hood = hoodOfRegion(ri, rj);
+      // Every section of farmland would carry the same label.
+      if (hood === H_FARMLAND) continue;
+      const h = HOODS[hood];
       const name = ` ${h.name} `;
       if (name.length > wCells * 0.9) continue;
       const x = (ri * HOOD_BLOCKS + 2) * P + HALF, z = (rj * HOOD_BLOCKS + 2) * P + HALF;
@@ -193,6 +212,7 @@ function shuttles(world: World, v: MapView, n: Inner): void {
   const halfW = (n.w / 2) * v.mpc, halfH = (n.h / 2) * n.mpr;
   for (let cx = cellOf(v.cx - halfW); cx <= cellOf(v.cx + halfW); cx++) {
     for (let cz = cellOf(v.cz - halfH); cz <= cellOf(v.cz + halfH); cz++) {
+      if (!hasLoop(cx, cz)) continue;
       if (v.mpc < 12) {
         for (const st of stationsOf(cx, cz)) {
           const cell = toCell(v, n, st.x, st.z);

@@ -5,7 +5,7 @@ import { hash3, mulberry32 } from '../core/hash';
 import { type Builder, type Rect, streetLamps } from './build';
 import { BOX_E, BOX_N, BOX_S, BOX_SIDES, BOX_BOTTOM, BOX_TOP, BOX_W, FaceList } from './faces';
 import {
-  HOODS, H_DOCKS, H_DOWNTOWN, H_ESTATES, H_JAPAN, H_MEDINA, H_OLDTOWN, H_PARIS, H_SEAFRONT, H_SUBURB, hoodAt,
+  HOODS, H_DOCKS, H_DOWNTOWN, H_ESTATES, H_FARMLAND, H_JAPAN, H_MEDINA, H_OLDTOWN, H_PARIS, H_SEAFRONT, H_SUBURB, hoodAt,
 } from './hoods';
 import { LANDMARK_I, LANDMARK_J, LOT_EDGE, P, RAIL_Y, blockKind, worldSeed } from './layout';
 import { buildDocks } from './styles/docks';
@@ -17,6 +17,7 @@ import { buildSuburb } from './styles/suburb';
 import { buildEstates } from './styles/estates';
 import { buildSeafront } from './styles/seafront';
 import { buildMedina } from './styles/medina';
+import { buildFarmland } from './styles/farmland';
 import type { Interior } from './interior';
 import { CURVE_R, LOOP_BLOCKS, LOOP_IN } from './loop';
 
@@ -191,11 +192,14 @@ export function generateBlock(i: number, j: number): Block {
     case H_ESTATES: buildEstates(B, i, j, kind, lot); break;
     case H_SEAFRONT: buildSeafront(B, i, j, kind, lot); break;
     case H_MEDINA: buildMedina(B, i, j, kind, lot); break;
+    case H_FARMLAND: buildFarmland(B, i, j); break;
     case H_DOWNTOWN:
     default: buildDowntown(B, i, j, kind, lot);
   }
-  streetLamps(B, bx, bz, HOODS[hood]);
-  addMonorail(B, i, j, bx, bz);
+  if (hood !== H_FARMLAND) {
+    streetLamps(B, bx, bz, HOODS[hood]);
+    addMonorail(B, i, j, bx, bz);
+  }
 
   const half = P / 2;
   return {

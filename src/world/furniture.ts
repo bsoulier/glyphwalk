@@ -1,12 +1,12 @@
 import {
-  M_CLOTH, M_CONCRETE, M_GLOW, M_GOODS, M_LAMP, M_LEAF, M_PAINT, M_SCREEN, M_SIGN, M_WOOD,
+  M_CLOTH, M_CONCRETE, M_GLOW, M_GOODS, M_LAMP, M_LEAF, M_PAINT, M_POOL, M_SCREEN, M_SIGN, M_WOOD,
 } from '../render/materials';
 import {
   FLOOR_CARPET, FLOOR_CHECKER, FLOOR_CONCRETE, FLOOR_PARQUET, FLOOR_TATAMI, FLOOR_TILES,
   GOODS_BAKERY, GOODS_BOOKS, GOODS_BOTTLES, GOODS_MIXED,
 } from '../render/interiors';
 import { hash3, mulberry32 } from '../core/hash';
-import { BOX_DEFAULT, BOX_SIDES, type FaceList } from './faces';
+import { BOX_DEFAULT, BOX_SIDES, BOX_TOP, type FaceList } from './faces';
 import { POSE_CHAIR, POSE_STAFF, POSE_STAND, POSE_STOOL } from './occupants';
 import { SIGN_CHAR_W, SIGN_H, SIGN_PAD, SIGN_TEXTS, signSeed, type RGB } from './signs';
 
@@ -543,6 +543,319 @@ export const TATAMI: Program = {
   },
 };
 
+// ---- mansions: rooms twenty metres wide, laid out in two halves either side of the entrance axis ----
+
+const BRASS: RGB = [200, 160, 80];
+const LACQUER: RGB = [24, 22, 26];
+const MARBLE: RGB = [230, 228, 222];
+const BALLS: readonly [number, number, RGB][] = [[0, 0.6, WHITE], [-0.2, -0.5, [200, 30, 30]], [0.25, -0.3, [240, 200, 40]]];
+
+/** The a-range from `p` to `q` metres out from the side wall at a = `w`, in order; `s` is 1 for the left wall, -1 for the right. */
+function out(w: number, s: number, p: number, q: number): [number, number] {
+  return s > 0 ? [w + p, w + q] : [w - q, w - p];
+}
+
+/** Brass ring of candle lamps under a bright drop, on a rod from the ceiling, high enough to walk under. */
+function chandelier(R: Room, a: number, d: number): void {
+  const y = R.H - 0.95;
+  R.box(a - 0.02, d - 0.02, a + 0.02, d + 0.02, y + 0.25, R.H, M_PAINT, BRASS, 0, BOX_SIDES);
+  R.box(a - 0.5, d - 0.5, a + 0.5, d + 0.5, y + 0.2, y + 0.25, M_PAINT, BRASS);
+  for (const [sa, sd] of [[-0.44, 0], [0.44, 0], [0, -0.44], [0, 0.44]]) {
+    R.box(a + sa - 0.06, d + sd - 0.06, a + sa + 0.06, d + sd + 0.06, y + 0.25, y + 0.42, M_LAMP, WARM);
+  }
+  R.box(a - 0.18, d - 0.18, a + 0.18, d + 0.18, y - 0.15, y + 0.2, M_LAMP, [255, 236, 200]);
+  R.light(a, d, y, WARM);
+}
+
+/** Stone fireplace on side wall `w` (see `out`), centred at d, lit, with a painting over the mantel. */
+function fireplace(R: Room, w: number, s: number, d: number): void {
+  const [a0, a1] = out(w, s, 0, 0.55);
+  R.box(a0, d - 1.0, a1, d + 1.0, 0, 1.1, M_CONCRETE, MARBLE);
+  const [f0, f1] = out(w, s, 0.55, 0.57);
+  R.box(f0, d - 0.45, f1, d + 0.45, 0.12, 0.72, M_GLOW, [255, 120, 40]);
+  const [m0, m1] = out(w, s, 0, 0.68);
+  R.box(m0, d - 1.15, m1, d + 1.15, 1.1, 1.18, M_WOOD, WOODS[2]);
+  const [c0, c1] = out(w, s, 0, 0.4);
+  R.box(c0, d - 0.8, c1, d + 0.8, 1.18, R.H, M_CONCRETE, MARBLE, 0, BOX_SIDES);
+  const [p0, p1] = out(w, s, 0.4, 0.44);
+  R.box(p0, d - 0.6, p1, d + 0.6, 1.45, 2.3, M_PAINT, BRASS);
+  const [q0, q1] = out(w, s, 0.44, 0.45);
+  R.box(q0, d - 0.5, q1, d + 0.5, 1.55, 2.2, M_CLOTH, R.pick(FABRIC));
+  R.solid(m0, d - 1.15, m1, d + 1.15, 1.18);
+  R.light(out(w, s, 0.9, 0.9)[0], d, 0.5, [255, 140, 60]);
+}
+
+/** Grand piano with its keyboard edge at d, the body reaching 2 m toward the front, and now and then a pianist. */
+function piano(R: Room, a: number, d: number): void {
+  R.box(a - 0.75, d - 1.3, a + 0.75, d, 0.62, 0.98, M_PAINT, LACQUER);
+  R.box(a - 0.75, d - 2.0, a + 0.2, d - 1.3, 0.62, 0.98, M_PAINT, LACQUER);
+  for (const [la, ld] of [[-0.6, -0.15], [0.6, -0.15], [-0.4, -1.8]]) {
+    R.box(a + la - 0.05, d + ld - 0.05, a + la + 0.05, d + ld + 0.05, 0, 0.62, M_PAINT, LACQUER, 0, BOX_SIDES);
+  }
+  R.box(a - 0.7, d, a + 0.7, d + 0.28, 0.7, 0.76, M_PAINT, WHITE);
+  R.box(a - 0.4, d - 0.12, a + 0.4, d - 0.08, 0.98, 1.3, M_PAINT, LACQUER);
+  R.solid(a - 0.75, d - 2.0, a + 0.75, d + 0.28, 1.0);
+  R.box(a - 0.45, d + 0.6, a + 0.45, d + 0.95, 0.44, 0.5, M_CLOTH, LACQUER);
+  R.box(a - 0.4, d + 0.65, a + 0.4, d + 0.9, 0, 0.44, M_PAINT, LACQUER, 0, BOX_SIDES);
+  R.solid(a - 0.45, d + 0.6, a + 0.45, d + 0.95, 0.5);
+  R.maybe(a, d + 0.78, 2, POSE_CHAIR, 2);
+}
+
+/** Billiard table long along d under a low lamp, with a player waiting a turn now and then. */
+function billiards(R: Room, a: number, d: number): void {
+  const ha = 0.75, hd = 1.35, w = WOODS[2];
+  R.box(a - ha, d - hd, a + ha, d + hd, 0.62, 0.78, M_WOOD, w);
+  R.box(a - ha + 0.1, d - hd + 0.1, a + ha - 0.1, d + hd - 0.1, 0.78, 0.8, M_CLOTH, [30, 110, 60]);
+  R.box(a - ha, d - hd, a + ha, d - hd + 0.1, 0.78, 0.86, M_WOOD, w);
+  R.box(a - ha, d + hd - 0.1, a + ha, d + hd, 0.78, 0.86, M_WOOD, w);
+  R.box(a - ha, d - hd + 0.1, a - ha + 0.1, d + hd - 0.1, 0.78, 0.86, M_WOOD, w);
+  R.box(a + ha - 0.1, d - hd + 0.1, a + ha, d + hd - 0.1, 0.78, 0.86, M_WOOD, w);
+  for (const sa of [-1, 1]) {
+    for (const sd of [-1, 1]) {
+      const la = a + sa * (ha - 0.15), ld = d + sd * (hd - 0.15);
+      R.box(la - 0.06, ld - 0.06, la + 0.06, ld + 0.06, 0, 0.62, M_WOOD, darker(w), 0, BOX_SIDES);
+    }
+  }
+  for (const [ba, bd, c] of BALLS) R.box(a + ba - 0.04, d + bd - 0.04, a + ba + 0.04, d + bd + 0.04, 0.8, 0.86, M_PAINT, c);
+  R.box(a - 0.2, d - 1.0, a + 0.2, d + 1.0, R.H - 0.95, R.H - 0.85, M_LAMP, [255, 236, 190]);
+  R.box(a - 0.01, d - 0.01, a + 0.01, d + 0.01, R.H - 0.85, R.H, M_PAINT, DARK, 0, BOX_SIDES);
+  R.light(a, d, R.H - 1.0, WARM);
+  R.solid(a - ha, d - hd, a + ha, d + hd, 0.86);
+  R.maybe(a + ha + 0.55, d + 0.5, 3, POSE_STAND, 2);
+}
+
+/** Freestanding bath, filled. */
+function bath(R: Room, a0: number, d0: number, a1: number, d1: number): void {
+  R.box(a0, d0, a1, d1, 0, 0.5, M_PAINT, WHITE);
+  R.box(a0 + 0.08, d0 + 0.08, a1 - 0.08, d1 - 0.08, 0.5, 0.51, M_POOL, [0, 0, 0], 0, BOX_TOP);
+  R.box(a0, d0, a1, d0 + 0.08, 0.5, 0.6, M_PAINT, WHITE);
+  R.box(a0, d1 - 0.08, a1, d1, 0.5, 0.6, M_PAINT, WHITE);
+  R.box(a0, d0 + 0.08, a0 + 0.08, d1 - 0.08, 0.5, 0.6, M_PAINT, WHITE);
+  R.box(a1 - 0.08, d0 + 0.08, a1, d1 - 0.08, 0.5, 0.6, M_PAINT, WHITE);
+  R.solid(a0, d0, a1, d1, 0.6);
+}
+
+/** Sofas round a fireplace on side wall `w`, an armchair facing the fire, and a grand piano by the front windows. */
+function salon(R: Room, w: number, s: number): void {
+  const d = Math.min(R.D - 3.2, Math.max(4.5, R.D * 0.55));
+  const [r0, r1] = out(w, s, 0, 5.4);
+  if (R.take(r0, d - 2.6, r1, d + 2.6)) {
+    const fab = R.pick(FABRIC);
+    fireplace(R, w, s, d);
+    const [g0, g1] = out(w, s, 0.9, 5.3);
+    R.flat(g0, d - 2.5, g1, d + 2.5, M_CLOTH, darker(fab, 0.6));
+    const [a0, a1] = out(w, s, 1.5, 3.7);
+    sofa(R, a0, d - 2.2, a1, d - 1.4, 0, fab);
+    sofa(R, a0, d + 1.4, a1, d + 2.2, 2, fab);
+    table(R, (a0 + a1) / 2, d, 1.2, 0.6, 0.42, WOODS[0]);
+    const [b0, b1] = out(w, s, 4.3, 5.1);
+    sofa(R, b0, d - 0.45, b1, d + 0.45, s > 0 ? 3 : 1, darker(fab, 0.85));
+  }
+  const pa = out(w, s, 7, 7)[0];
+  if (R.take(pa - 0.85, 1.0, pa + 0.85, 4.3)) piano(R, pa, 3.2);
+}
+
+/** A dining table for ten under two chandeliers, a sideboard on side wall `w` and a drinks cabinet at the back. */
+function dining(R: Room, w: number, s: number): void {
+  const ta = out(w, s, 4.2, 4.2)[0];
+  const td = Math.min(R.D - 3.4, Math.max(3.4, R.D * 0.5));
+  if (R.take(ta - 1.3, td - 2.95, ta + 1.3, td + 2.95)) {
+    R.flat(ta - 1.6, td - 3.0, ta + 1.6, td + 3.0, M_CLOTH, [110, 40, 44]);
+    table(R, ta, td, 1.1, 4.4, 0.76, R.pick(WOODS));
+    for (let k = 0; k < 4; k++) {
+      const d = td - 1.65 + k * 1.1;
+      chair(R, ta - 0.8, d, 1, WOODS[2]);
+      chair(R, ta + 0.8, d, 3, WOODS[2]);
+    }
+    chair(R, ta, td - 2.6, 0, WOODS[2]);
+    chair(R, ta, td + 2.6, 2, WOODS[2]);
+    chandelier(R, ta, td - 1.1);
+    chandelier(R, ta, td + 1.1);
+  }
+  const [b0, b1] = out(w, s, 0.05, 0.55);
+  if (R.take(b0, td - 1.5, b1, td + 1.5)) {
+    const bm = (b0 + b1) / 2;
+    R.box(b0, td - 1.4, b1, td + 1.4, 0, 0.9, M_WOOD, WOODS[2]);
+    for (const e of [-0.9, 0.9]) R.box(bm - 0.06, td + e - 0.06, bm + 0.06, td + e + 0.06, 0.9, 1.2, M_LAMP, WARM);
+    R.solid(b0, td - 1.4, b1, td + 1.4, 0.9);
+  }
+  const [s0, s1] = out(w, s, 1.2, 3.6);
+  if (R.take(s0, R.D - 0.5, s1, R.D)) shelves(R, s0, R.D - 0.45, s1, R.D - 0.05, 2.2, 4, WOODS[2], GOODS_BOTTLES);
+}
+
+/** Ground floor of a classical mansion: a runner from the door to the lift, the salon on one side, dining on the other. */
+export const SALON: Program = {
+  name: 'SALON', floor: FLOOR_CHECKER, floorC: [226, 222, 212], wall: [232, 222, 200], light: [255, 226, 175],
+  build(R) {
+    R.busy = 0.15;
+    const c = R.entry;
+    const end = R.lift ? R.lift[1] - 0.3 : R.D - 1;
+    R.flat(c - 0.9, 0.3, c + 0.9, end, M_CLOTH, [130, 30, 36]);
+    for (let d = 3; d < end - 1; d += 3.5) chandelier(R, c, d);
+    const left = R.rng() < 0.5;
+    const ws = left ? 0 : R.W, wd = left ? R.W : 0;
+    salon(R, ws, left ? 1 : -1);
+    dining(R, wd, left ? -1 : 1);
+    // The butler waits beside the door, on the dining side, looking at whoever comes in.
+    const ba = left ? c + 2.2 : c - 2.2;
+    if (R.take(ba - 0.4, 1.0, ba + 0.4, 1.8)) R.person(ba, 1.4, left ? 3 : 1, POSE_STAFF);
+    if (R.lift) {
+      const [la0, , la1] = R.lift;
+      for (const a of [la0 - 0.6, la1 + 0.6]) if (R.take(a - 0.4, R.D - 0.9, a + 0.4, R.D - 0.05)) plant(R, a, R.D - 0.45, 1.1);
+    }
+    for (const a of [0.5, R.W - 0.5]) if (R.take(a - 0.4, 0.1, a + 0.4, 0.9)) plant(R, a, 0.5);
+  },
+};
+
+/** Middle floor of a tall mansion: books on every wall, a billiard table on one side and a reading corner on the other. */
+export const LIBRARY: Program = {
+  name: 'LIBRARY', floor: FLOOR_PARQUET, floorC: [96, 62, 40], wall: [74, 92, 76], light: [255, 210, 150],
+  build(R) {
+    R.busy = 0.12;
+    for (const [a0, a1] of [[0.05, 0.5], [R.W - 0.5, R.W - 0.05]]) {
+      if (R.take(a0, 1.0, a1, R.D - 1.0)) shelves(R, a0, 1.0, a1, R.D - 1.0, 2.6, 6, WOODS[2], GOODS_BOOKS);
+    }
+    const [la0, , la1] = R.lift ?? [R.W / 2, 0, R.W / 2, 0];
+    for (const [a0, a1] of [[0.6, la0 - 1.0], [la1 + 1.0, R.W - 0.6]]) {
+      if (a1 - a0 > 1 && R.take(a0, R.D - 0.5, a1, R.D)) shelves(R, a0, R.D - 0.45, a1, R.D - 0.05, 2.6, 6, WOODS[2], GOODS_BOOKS);
+    }
+    const left = R.rng() < 0.5;
+    const wb = left ? 0 : R.W, sb = left ? 1 : -1;
+    const wr = left ? R.W : 0, sr = -sb;
+    const d = R.D * 0.5;
+    const ba = out(wb, sb, 4.4, 4.4)[0];
+    if (R.take(ba - 1.7, d - 2.4, ba + 1.7, d + 2.4)) billiards(R, ba, d);
+    // Two armchairs over a low table with a lamp, and a writing desk at the window.
+    const [c0, c1] = out(wr, sr, 1.2, 4.8);
+    if (R.take(c0, d - 1.6, c1, d + 1.6)) {
+      const fab = R.pick(FABRIC);
+      const m = (c0 + c1) / 2;
+      R.flat(c0, d - 1.5, c1, d + 1.5, M_CLOTH, darker(fab, 0.6));
+      sofa(R, c0 + 0.2, d - 0.45, c0 + 1.0, d + 0.45, 1, fab);
+      sofa(R, c1 - 1.0, d - 0.45, c1 - 0.2, d + 0.45, 3, fab);
+      table(R, m, d, 0.6, 0.6, 0.5, WOODS[0]);
+      R.box(m - 0.08, d - 0.08, m + 0.08, d + 0.08, 0.5, 0.75, M_LAMP, WARM);
+      R.light(m, d, 0.8, WARM);
+    }
+    desk(R, out(wr, sr, 3, 3)[0], 0.45, 2, WOODS[2]);
+    chandelier(R, R.entry, R.D * 0.4);
+    for (const a of [0.5, R.W - 0.5]) if (R.take(a - 0.4, 0.1, a + 0.4, 0.9)) plant(R, a, 0.5);
+  },
+};
+
+/** Top floor of a mansion: a king-size bed against one side wall, a freestanding bath and a vanity on the other. */
+export const MASTER_SUITE: Program = {
+  name: 'MASTER SUITE', floor: FLOOR_CARPET, floorC: [150, 132, 112], wall: [226, 216, 202], light: [255, 225, 185],
+  build(R) {
+    R.busy = 0.1;
+    const left = R.rng() < 0.5;
+    const wb = left ? 0 : R.W, sb = left ? 1 : -1;
+    const wt = left ? R.W : 0, st = -sb;
+    const d = R.D * 0.5;
+    const [e0, e1] = out(wb, sb, 0, 3.8);
+    if (R.take(e0, d - 2.0, e1, d + 2.0)) {
+      const fab = R.pick(FABRIC);
+      const [r0, r1] = out(wb, sb, 0.6, 3.7);
+      R.flat(r0, d - 1.9, r1, d + 1.9, M_CLOTH, [200, 186, 160]);
+      const [b0, b1] = out(wb, sb, 0.05, 2.35);
+      bed(R, b0, d - 1.0, b1, d + 1.0, sb > 0 ? 1 : 3, fab);
+      const [n0, n1] = out(wb, sb, 0.1, 0.55);
+      const nm = (n0 + n1) / 2;
+      for (const nd of [d - 1.5, d + 1.5]) {
+        R.box(n0, nd - 0.22, n1, nd + 0.22, 0, 0.55, M_WOOD, WOODS[2]);
+        R.box(nm - 0.08, nd - 0.08, nm + 0.08, nd + 0.08, 0.55, 0.85, M_LAMP, WARM);
+        R.solid(n0, nd - 0.22, n1, nd + 0.22, 0.55);
+      }
+      const [f0, f1] = out(wb, sb, 2.6, 3.05);
+      R.box(f0, d - 0.8, f1, d + 0.8, 0, 0.45, M_CLOTH, darker(fab, 0.8));
+      R.solid(f0, d - 0.8, f1, d + 0.8, 0.45);
+      chandelier(R, (e0 + e1) / 2, d);
+    }
+    const [w0, w1] = out(wb, sb, 0.4, 4.2);
+    if (R.take(w0, R.D - 0.7, w1, R.D)) {
+      R.box(w0, R.D - 0.65, w1, R.D - 0.05, 0, 2.4, M_WOOD, WOODS[1]);
+      R.solid(w0, R.D - 0.65, w1, R.D - 0.05, 2.4);
+    }
+    // Armchairs looking out of the front windows.
+    const fab = R.pick(FABRIC);
+    for (const p of [1.6, 3.2]) {
+      const [x0, x1] = out(wb, sb, p - 0.45, p + 0.45);
+      if (R.take(x0, 0.9, x1, 1.9)) sofa(R, x0, 1.0, x1, 1.8, 2, fab);
+    }
+    const [t0, t1] = out(wt, st, 1.0, 3.0);
+    if (R.take(t0 - 0.3, d - 0.8, t1 + 0.3, d + 0.8)) {
+      R.flat(t0 - 0.3, d - 0.8, t1 + 0.3, d + 0.8, M_CONCRETE, MARBLE);
+      bath(R, t0, d - 0.45, t1, d + 0.45);
+    }
+    const [v0, v1] = out(wt, st, 0.6, 3.4);
+    if (R.take(v0, R.D - 0.7, v1, R.D)) {
+      counter(R, v0, R.D - 0.65, v1, R.D - 0.05, 0.9, WHITE, MARBLE);
+      R.box(v0 + 0.3, R.D - 0.07, v1 - 0.3, R.D - 0.05, 1.25, 2.1, M_PAINT, [190, 206, 216]);
+    }
+    desk(R, out(wt, st, 3, 3)[0], 0.45, 2, WOODS[3]);
+    plantsAlong(R, 8, 2);
+    for (const a of [0.5, R.W - 0.5]) if (R.take(a - 0.4, 0.1, a + 0.4, 0.9)) plant(R, a, 0.5);
+  },
+};
+
+/** Ground floor of a modern villa: a kitchen with an island and a dining table on one side, a sofa facing a screen and a piano on the other. */
+export const OPEN_PLAN: Program = {
+  name: 'OPEN PLAN', floor: FLOOR_TILES, floorC: [214, 210, 202], wall: [238, 238, 234], light: [245, 242, 232],
+  build(R) {
+    R.busy = 0.12;
+    const left = R.rng() < 0.5;
+    const wk = left ? 0 : R.W, sk = left ? 1 : -1;
+    const wl = left ? R.W : 0, sl = -sk;
+    const [f0, f1] = out(wk, sk, 0.05, 0.95);
+    if (R.take(f0, R.D - 0.8, f1, R.D)) {
+      R.box(f0, R.D - 0.75, f1, R.D - 0.05, 0, 2.1, M_PAINT, STEEL);
+      R.solid(f0, R.D - 0.75, f1, R.D - 0.05, 2.1);
+    }
+    const [k0, k1] = out(wk, sk, 1.0, 7.5);
+    if (R.take(k0, R.D - 0.7, k1, R.D)) {
+      counter(R, k0, R.D - 0.65, k1, R.D - 0.05, 0.92, WHITE, DARK);
+      R.box(k0, R.D - 0.4, k1, R.D - 0.05, 1.5, 2.2, M_WOOD, WHITE);
+    }
+    const [i0, i1] = out(wk, sk, 2.2, 6.0);
+    const id = R.D - 3.3;
+    if (R.take(i0, id - 0.8, i1, id + 1.0)) {
+      counter(R, i0, id, i1, id + 1.0, 0.92, DARK, STONE_TOP);
+      for (let a = i0 + 0.5; a < i1 - 0.2; a += 0.9) stool(R, a, id - 0.45, WOODS[3], 0);
+      for (const p of [0.3, 0.7]) pendant(R, i0 + (i1 - i0) * p, id + 0.5, WARM);
+    }
+    const ta = out(wk, sk, 4.2, 4.2)[0];
+    if (R.take(ta - 1.8, 1.0, ta + 1.8, 3.6)) {
+      table(R, ta, 2.3, 2.6, 1.0, 0.76, R.pick(WOODS));
+      for (const e of [-0.9, 0, 0.9]) {
+        chair(R, ta + e, 1.55, 0, DARK);
+        chair(R, ta + e, 3.05, 2, DARK);
+      }
+      pendant(R, ta - 0.6, 2.3, WARM);
+      pendant(R, ta + 0.6, 2.3, WARM);
+    }
+    const d = R.D * 0.55;
+    const [s0, s1] = out(wl, sl, 0, 4.6);
+    if (R.take(s0, d - 2.1, s1, d + 2.1)) {
+      const fab = R.pick(FABRIC);
+      const [g0, g1] = out(wl, sl, 0.9, 4.5);
+      R.flat(g0, d - 2.0, g1, d + 2.0, M_CLOTH, darker(fab, 0.6));
+      const [u0, u1] = out(wl, sl, 0.05, 0.5);
+      R.box(u0, d - 1.3, u1, d + 1.3, 0, 0.45, M_WOOD, DARK);
+      R.solid(u0, d - 1.3, u1, d + 1.3, 0.45);
+      const [v0, v1] = out(wl, sl, 0.1, 0.14);
+      R.box(v0, d - 1.0, v1, d + 1.0, 0.8, 1.9, M_SCREEN, [110, 170, 255]);
+      const [c0, c1] = out(wl, sl, 1.7, 2.7);
+      table(R, (c0 + c1) / 2, d, 1.0, 1.4, 0.4, WOODS[0]);
+      const [o0, o1] = out(wl, sl, 3.5, 4.4);
+      sofa(R, o0, d - 1.9, o1, d + 1.9, sl > 0 ? 3 : 1, fab);
+    }
+    const pa = out(wl, sl, 7, 7)[0];
+    if (R.take(pa - 0.85, 1.0, pa + 0.85, 4.3)) piano(R, pa, 3.2);
+    plantsAlong(R, 7, 3);
+    for (const a of [0.5, R.W - 0.5]) if (R.take(a - 0.4, 0.1, a + 0.4, 0.9)) plant(R, a, 0.5);
+  },
+};
+
 export const HALL: Program = {
   name: 'WAREHOUSE', floor: FLOOR_CONCRETE, floorC: [120, 120, 118], wall: [130, 136, 140], light: [255, 220, 170],
   build(R) {
@@ -828,6 +1141,51 @@ export const SKYDECK: Program = {
     for (let d = 3; d < R.D; d += 5) for (let a = 3; a < R.W; a += 5) R.light(a, d, R.H - 0.3, [150, 200, 255]);
     menuBoard(R, R.W / 2, 2.4, [120, 220, 255]);
     plantsAlong(R, 7, 4);
+  },
+};
+
+/** Bench for two, long along a (or along d when `alongA` is false), its sitters looking along `facing`. */
+function bench(R: Room, a: number, d: number, alongA: boolean, facing: number): void {
+  const ha = alongA ? 0.85 : 0.25, hd = alongA ? 0.25 : 0.85;
+  if (!R.take(a - ha - 0.1, d - hd - 0.1, a + ha + 0.1, d + hd + 0.1)) return;
+  R.box(a - ha, d - hd, a + ha, d + hd, 0.4, 0.47, M_WOOD, WOODS[3]);
+  R.box(a - ha + 0.05, d - hd + 0.05, a + ha - 0.05, d + hd - 0.05, 0, 0.4, M_PAINT, DARK, 0, BOX_SIDES);
+  R.solid(a - ha, d - hd, a + ha, d + hd, 0.47);
+  const sa = alongA ? 0.4 : 0, sd = alongA ? 0 : 0.4;
+  R.maybe(a - sa, d - sd, facing, POSE_CHAIR, 0.8);
+  R.maybe(a + sa, d + sd, facing, POSE_CHAIR, 0.6);
+}
+
+/**
+ * The Glyph Tower's roof, open to the sky: telescopes and benches along the railing, all looking out,
+ * and nothing more than 3 m in from it, since the crown stands in the middle.
+ */
+export const OPEN_SKY: Program = {
+  name: 'OPEN SKY', floor: FLOOR_PARQUET, floorC: [128, 114, 98], wall: [180, 186, 196], light: [200, 220, 255],
+  build(R) {
+    R.busy = 0.4;
+    for (let t = 2.4; t < R.W - 2; t += 4.6) {
+      if (R.take(t - 0.5, 0.1, t + 0.5, 1.4)) telescope(R, t, 0.6, 2);
+      if (R.take(t - 0.5, R.D - 1.4, t + 0.5, R.D - 0.1)) telescope(R, t, R.D - 0.6, 0);
+      bench(R, t + 2.3, 2.3, true, 2);
+      bench(R, t + 2.3, R.D - 2.3, true, 0);
+    }
+    for (let t = 4.7; t < R.D - 4; t += 4.6) {
+      if (R.take(0.1, t - 0.5, 1.4, t + 0.5)) telescope(R, 0.6, t, 3);
+      if (R.take(R.W - 1.4, t - 0.5, R.W - 0.1, t + 0.5)) telescope(R, R.W - 0.6, t, 1);
+      bench(R, 2.3, t + 2.3, false, 3);
+      bench(R, R.W - 2.3, t + 2.3, false, 1);
+    }
+    // Deck lights along the railing, for the night.
+    const glow: RGB = [150, 200, 255];
+    for (let t = 1; t < R.W; t += 3) {
+      R.light(t, 0.25, 0.2, glow);
+      R.light(t, R.D - 0.25, 0.2, glow);
+    }
+    for (let t = 4; t < R.D - 3; t += 3) {
+      R.light(0.25, t, 0.2, glow);
+      R.light(R.W - 0.25, t, 0.2, glow);
+    }
   },
 };
 

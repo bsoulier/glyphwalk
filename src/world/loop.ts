@@ -1,5 +1,5 @@
 import { hash3 } from '../core/hash';
-import { HOODS, hoodAt } from './hoods';
+import { CITY_HALF, HOODS, hoodAt, inCity } from './hoods';
 import { LANDMARK_I, LANDMARK_J, P, RAIL_TOP, worldSeed } from './layout';
 import { SIGN_TEXTS, TEXT_TOWER } from './signs';
 
@@ -40,6 +40,14 @@ export function loopOrigin(c: number): number {
 export function cellOf(v: number): number {
   return Math.floor(v / CELL);
 }
+
+/** Only the city's cells have a loop line; there is no monorail out in the farmland. */
+export function hasLoop(cx: number, cz: number): boolean {
+  return inCity(cx * LOOP_BLOCKS, cz * LOOP_BLOCKS);
+}
+
+/** The city's cells on each axis, for sending a rider from the farmland to the nearest loop. */
+export const CITY_CELLS = CITY_HALF / LOOP_BLOCKS;
 
 export interface PathPoint {
   x: number;
@@ -123,7 +131,7 @@ export function stationsOf(cx: number, cz: number): readonly Station[] {
   if (list) return list;
   if (stationCache.size > 64) stationCache.clear();
   const p: PathPoint = { x: 0, z: 0, yaw: 0 };
-  list = STATION_S.map((s, n) => {
+  list = !hasLoop(cx, cz) ? [] : STATION_S.map((s, n) => {
     loopPoint(cx, cz, s, p);
     const k = Math.floor(n / STATION_T.length);
     const [dx, dz] = DIRS[k], [nx, nz] = DIRS[(k + 1) & 3];
@@ -315,6 +323,7 @@ export function crowdSlot(cx: number, cz: number, n: number, time: number): numb
 
 /** Where on the map loop lines run (straight sides only; the corners are drawn square). */
 export function onLoopLine(x: number, z: number, tol: number): boolean {
+  if (!hasLoop(cellOf(x), cellOf(z))) return false;
   const lx = x - loopOrigin(cellOf(x)), lz = z - loopOrigin(cellOf(z));
   const alongX = lx >= -tol && lx <= SIDE + tol, alongZ = lz >= -tol && lz <= SIDE + tol;
   return (alongX && (Math.abs(lz) < tol || Math.abs(lz - SIDE) < tol)) || (alongZ && (Math.abs(lx) < tol || Math.abs(lx - SIDE) < tol));

@@ -100,15 +100,26 @@ test('Enter hails a taxi, rides in the back and gets out on the sidewalk', async
   expect(errors).toEqual([]);
 });
 
-test('the district list goes straight to the Glyph Tower, deck or doors', async ({ page }) => {
+test('the district list goes straight to the Glyph Tower, roof, deck or doors', async ({ page }) => {
   const errors = watchErrors(page);
   await page.goto('./?hood=medina&time=day');
   await expect.poll(() => stat(page, 'SECTOR')).toBe('MEDINA');
   await page.selectOption('#sel-hood', 'tower-deck');
   await expect(page.locator('#osd')).toContainText('SKYDECK');
   await expect.poll(() => stat(page, 'SECTOR')).toContain('GLYPH TOWER');
+  await page.selectOption('#sel-hood', 'tower-roof');
+  await expect(page.locator('#osd')).toContainText('ROOF - OPEN SKY');
   await page.selectOption('#sel-hood', 'tower-door');
   await expect(page.locator('#prompt')).toContainText('walk in: GLYPH TOWER');
+  expect(errors).toEqual([]);
+});
+
+test('the farmland starts where the city ends, and the district list goes there', async ({ page }) => {
+  const errors = watchErrors(page);
+  await page.goto('./?time=day');
+  await expect.poll(() => stat(page, 'SECTOR')).toBe('DOWNTOWN');
+  await page.selectOption('#sel-hood', { label: 'FARMLAND' });
+  await expect.poll(() => stat(page, 'SECTOR')).toBe('FARMLAND');
   expect(errors).toEqual([]);
 });
 

@@ -3,7 +3,7 @@ import { drawBoxYaw, drawPoint, sphereVisible, stats } from '../render/raster';
 import { M_CAR, M_GLASS, M_GLOW, M_WHEEL } from '../render/materials';
 import { glyph } from '../core/charset';
 import { wrapAngle } from '../core/hash';
-import { hoodAt } from './hoods';
+import { HOOD_BLOCKS, H_FARMLAND, hoodAt, roadEW, roadNS, signalled } from './hoods';
 import { LANE, P, ROAD_HALF } from './layout';
 import { AMBER, RED, carLight, signalPhase } from './signals';
 
@@ -38,6 +38,42 @@ const CAR_LEN = 4.5;
 const STOP_BACK = 12.8;
 const WALKER_LOOK = 34;
 const PED_LOOK = 22;
+/** Vehicles still about when the camera is out in the farmland; the rest wait, far away, for the city. */
+const RURAL = 5;
+const PARKED = 1e7;
+
+/** x of the north-south road nearest to (x, z); out in the country most grid lines have none. */
+function roadXNear(x: number, z: number): number {
+  const m = Math.floor(z / P), n0 = Math.round(x / P);
+  for (let k = 0; k <= HOOD_BLOCKS; k++) {
+    const a = n0 - k, b = n0 + k, aFirst = x - a * P <= b * P - x;
+    if (roadNS(aFirst ? a : b, m)) return (aFirst ? a : b) * P;
+    if (roadNS(aFirst ? b : a, m)) return (aFirst ? b : a) * P;
+  }
+  return n0 * P;
+}
+
+/** z of the east-west road nearest to (x, z). */
+function roadZNear(x: number, z: number): number {
+  const m = Math.floor(x / P), n0 = Math.round(z / P);
+  for (let k = 0; k <= HOOD_BLOCKS; k++) {
+    const a = n0 - k, b = n0 + k, aFirst = z - a * P <= b * P - z;
+    if (roadEW(aFirst ? a : b, m)) return (aFirst ? a : b) * P;
+    if (roadEW(aFirst ? b : a, m)) return (aFirst ? b : a) * P;
+  }
+  return n0 * P;
+}
+
+/** Does a road leave the crossing at (ix, iz) heading `dir`? */
+function leads(ix: number, iz: number, dir: number): boolean {
+  const i = Math.round(ix / P), j = Math.round(iz / P);
+  switch (dir) {
+    case 0: return roadNS(i, j);
+    case 2: return roadNS(i, j - 1);
+    case 1: return roadEW(j, i);
+    default: return roadEW(j, i - 1);
+  }
+}
 
 export class Vehicle {
   x = 0;
@@ -124,10 +160,10 @@ export class Traffic {
   private putOnRoad(v: Vehicle, px: number, pz: number, dir: number): void {
     v.dir = dir;
     if ((dir & 1) === 0) {
-      v.x = Math.round(px / P) * P + RIGHT_X[dir] * LANE;
+      v.x = roadXNear(px, pz) + RIGHT_X[dir] * LANE;
       v.z = pz;
     } else {
-      v.z = Math.round(pz / P) * P + RIGHT_Z[dir] * LANE;
+      v.z = roadZNear(px, pz) + RIGHT_Z[dir] * LANE;
       v.x = px;
     }
     v.yaw = DIR_YAW[dir];
@@ -147,7 +183,7 @@ export class Traffic {
       v.r = 235; v.g = 190; v.b = 40;
     }
     v.home = hood;
-    const X = Math.round(x / P) * P, Z = Math.round(z / P) * P;
+    const X = roadXNear(x, z), Z = roadZNear(x, z);
     if (Math.abs(x - X) < Math.abs(z - Z)) this.putOnRoad(v, x, z, x >= X ? 0 : 2);
     else this.putOnRoad(v, x, z, z >= Z ? 3 : 1);
     v.vel = this.sky ? v.speed * 0.5 : 0;
@@ -179,31 +215,44 @@ export class Traffic {
     const even = (v.dir & 1) === 0;
     const pos = even ? v.z : v.x;
     const sgn = v.dir < 2 ? 1 : -1;
-    const C = sgn > 0 ? (Math.floor((pos + ROAD_HALF) / P) + 1) * P : (Math.ceil((pos - ROAD_HALF) / P) - 1) * P;
+    let C = sgn > 0 ? (Math.floor((pos + ROAD_HALF) / P) + 1) * P : (Math.ceil((pos - ROAD_HALF) / P) - 1) * P;
+    // Out in the country, run on past the lines no road crosses to the next crossroads.
+    const line = even ? Math.round(v.x / P) * P : Math.round(v.z / P) * P;
+    for (let k = 0; k < 2 * HOOD_BLOCKS && !this.junction(even, line, C); k++) C += sgn * P;
     v.cross = C;
     const straight = this.sky ? 0.75 : 0.55;
     const roll = Math.random();
-    let turn = roll < straight ? 0 : roll < (1 + straight) / 2 ? 1 : 2;
-    if (v.home >= 0) turn = this.stayIn(v, C, turn);
+    const turn = this.choose(v, C, roll < straight ? 0 : roll < (1 + straight) / 2 ? 1 : 2);
     v.turn = turn;
     v.nextDir = turn === 0 ? v.dir : turn === 1 ? (v.dir + 1) & 3 : (v.dir + 3) & 3;
     v.trigger = turn === 0 ? C : C + (even ? RIGHT_Z[v.nextDir] : RIGHT_X[v.nextDir]) * LANE;
   }
 
+  /** Does a road cross the line the car drives along (x or z = `line`) at `c` on its own axis? */
+  private junction(even: boolean, line: number, c: number): boolean {
+    const n = Math.round(c / P), m = Math.round(line / P);
+    return even ? roadEW(n, m - 1) || roadEW(n, m) : roadNS(n, m - 1) || roadNS(n, m);
+  }
+
   /**
-   * Prefer the planned turn, but only take a segment with a home-district block on its right, where
-   * the lane is. A right turn circles the same block, so there is always at least one valid choice.
+   * Prefer the planned turn, but only onto a road that is there (the city's streets end at its edge),
+   * and on a hailed ride only onto a segment with a home-district block on its right, where the lane
+   * is. A right turn circles the same block, so in the city there is always a valid choice.
    */
-  private stayIn(v: Vehicle, C: number, preferred: number): number {
+  private choose(v: Vehicle, C: number, preferred: number): number {
     const even = (v.dir & 1) === 0;
     const ix = even ? Math.round(v.x / P) * P : C;
     const iz = even ? C : Math.round(v.z / P) * P;
+    let fallback = -1;
     for (const t of [preferred, 0, 1, 2]) {
       const nd = t === 0 ? v.dir : t === 1 ? (v.dir + 1) & 3 : (v.dir + 3) & 3;
+      if (!leads(ix, iz, nd)) continue;
+      if (v.home < 0) return t;
+      if (fallback < 0) fallback = t;
       const bx = ix + FWD_X[nd] * (P / 2) + RIGHT_X[nd] * 12, bz = iz + FWD_Z[nd] * (P / 2) + RIGHT_Z[nd] * 12;
       if (hoodAt(Math.floor(bx / P), Math.floor(bz / P)) === v.home) return t;
     }
-    return preferred;
+    return fallback >= 0 ? fallback : preferred;
   }
 
   /** How far the car may still travel this frame before it has to be stopped. */
@@ -215,9 +264,9 @@ export class Traffic {
     let limit = Infinity;
 
     const toStop = (v.cross - sgn * STOP_BACK - pos) * sgn;
-    if (toStop > -0.3) {
-      const i = even ? Math.round(v.x / P) : Math.round(v.cross / P);
-      const j = even ? Math.round(v.cross / P) : Math.round(v.z / P);
+    const i = even ? Math.round(v.x / P) : Math.round(v.cross / P);
+    const j = even ? Math.round(v.cross / P) : Math.round(v.z / P);
+    if (toStop > -0.3 && signalled(i, j)) {
       const light = carLight(signalPhase(i, j, env.time), even);
       // On amber, only stop if it can be done comfortably; otherwise clear the junction.
       if (light === RED || (light === AMBER && toStop > (v.vel * v.vel) / (2 * COMFORT))) limit = Math.max(0, toStop);
@@ -251,7 +300,14 @@ export class Traffic {
 
   update(dt: number, cx: number, cz: number, radius: number, keep: Vehicle | null, env: TrafficEnv): void {
     const r2 = radius * radius;
-    for (const v of this.list) {
+    const rural = hoodAt(Math.floor(cx / P), Math.floor(cz / P)) === H_FARMLAND;
+    for (let k = 0; k < this.list.length; k++) {
+      const v = this.list[k];
+      if (rural && k >= RURAL && v !== keep) {
+        v.x = v.z = PARKED;
+        v.home = -1;
+        continue;
+      }
       let step: number;
       if (this.sky) {
         v.vel += (v.speed - v.vel) * Math.min(1, dt);

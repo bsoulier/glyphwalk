@@ -1,8 +1,10 @@
 import { glyph } from '../core/charset';
 import { hash2, hash3, valueNoise } from '../core/hash';
 import {
-  HOODS, H_DOCKS, H_DOWNTOWN, H_ESTATES, H_JAPAN, H_MEDINA, H_OLDTOWN, H_PARIS, H_SEAFRONT, H_SUBURB, hoodAt, isBeach,
+  HOODS, H_DOCKS, H_DOWNTOWN, H_ESTATES, H_FARMLAND, H_JAPAN, H_MEDINA, H_OLDTOWN, H_PARIS, H_SEAFRONT, H_SUBURB,
+  hoodAt, inCity, isBeach, roadEW, roadNS,
 } from '../world/hoods';
+import { CROP_CORN, CROP_HAY, CROP_PASTURE, CROP_PLOWED, CROP_SOY, FIELD_BLOCKS, ROWS_ALONG_X, fieldAt } from '../world/fields';
 import {
   HALF, KIND_CITY, KIND_PARK, KIND_PLAZA, LAMP_OFF, LAMP_SPACING, LOT_EDGE, P, ROAD_HALF, blockKind, hasPond, isLandmark,
 } from '../world/layout';
@@ -108,16 +110,24 @@ export function groundCell(
   const hood = hoodAt(bi, bj);
   BK = 0.2;
   SEA = false;
-  const onX = ax < ROAD_HALF, onZ = az < ROAD_HALF;
-  if (onX || onZ) {
-    ZONE = Z_ROAD;
-    road(hood, X, Z, onX, onZ, ax, az, sx, sz, lx, lz, fp);
-  } else if (ax < LOT_EDGE || az < LOT_EDGE) {
-    ZONE = Z_WALK;
-    sidewalk(hood, X, Z, ax, az, fp);
+  let onX: boolean, onZ: boolean;
+  if (hood === H_FARMLAND) {
+    country(bi, bj, X, Z, ax, az, sx, sz, lx, lz, fp);
+    onX = CX;
+    onZ = CZ;
   } else {
-    ZONE = Z_LOT;
-    lot(hood, bi, bj, X, Z, lx - HALF, lz - HALF, fp);
+    onX = ax < ROAD_HALF;
+    onZ = az < ROAD_HALF;
+    if (onX || onZ) {
+      ZONE = Z_ROAD;
+      road(hood, X, Z, onX, onZ, ax, az, sx, sz, lx, lz, fp);
+    } else if (ax < LOT_EDGE || az < LOT_EDGE) {
+      ZONE = Z_WALK;
+      sidewalk(hood, X, Z, ax, az, fp);
+    } else {
+      ZONE = Z_LOT;
+      lot(hood, bi, bj, X, Z, lx - HALF, lz - HALF, fp);
+    }
   }
   if (debugView === 2) {
     const c = ZONE_COLORS[ZONE];
@@ -136,7 +146,8 @@ export function groundCell(
     BK = BK + (0.62 - BK) * k;
   }
 
-  const l = lampsOn > 0 ? lampLight(ax, az, lx, lz) * lampsOn : 0;
+  // No street lamps out in the country: the fields are dark at night.
+  const l = lampsOn > 0 && hood !== H_FARMLAND ? lampLight(ax, az, lx, lz) * lampsOn : 0;
   if (l > 0) {
     const c = HOODS[hood].lamp;
     R += c[0] * 0.68 * l; G += c[1] * 0.6 * l; B += c[2] * 0.45 * l; BK += 0.3 * l;
@@ -375,6 +386,136 @@ function lot(hood: number, bi: number, bj: number, X: number, Z: number, dx: num
       if (kind === KIND_PLAZA) checker(X, Z, fp);
       else if (adx < 1.6 || adz < 1.6) { GL = G_DOT; R = 120; G = 108; B = 84; }
       else grass(X, Z, fp);
+  }
+}
+
+// ---- the farmland outside the city ----
+
+/** Country road: two lanes (cars run at +-LANE) and a paved strip each side. */
+const C_HALF = 4.4;
+const F_SIZE = FIELD_BLOCKS * P;
+/** Set by `country`: the cell is on a road along z (x constant) / along x, for the snow pass. */
+let CX = false;
+let CZ = false;
+
+/**
+ * Farmland: country roads along the section lines, gravel shoulders and a grass verge, then fields. The
+ * street along the edge of the city is still a city street, paved like the district it borders.
+ */
+function country(
+  bi: number, bj: number, X: number, Z: number, ax: number, az: number, sx: number, sz: number, lx: number, lz: number, fp: number,
+): void {
+  const nx = lx < HALF ? bi : bi + 1, nz = lz < HALF ? bj : bj + 1;
+  const ns = roadNS(nx, bj), ew = roadEW(nz, bi);
+  const nsCity = ns && (inCity(nx - 1, bj) || inCity(nx, bj));
+  const ewCity = ew && (inCity(bi, nz - 1) || inCity(bi, nz));
+  const hx = nsCity ? ROAD_HALF : C_HALF, hz = ewCity ? ROAD_HALF : C_HALF;
+  CX = ns && ax < hx;
+  CZ = ew && az < hz;
+  if (CX || CZ) {
+    ZONE = Z_ROAD;
+    if ((CX && nsCity) || (CZ && ewCity)) {
+      const city = CX && nsCity ? hoodAt(inCity(nx - 1, bj) ? nx - 1 : nx, bj) : hoodAt(bi, inCity(bi, nz - 1) ? nz - 1 : nz);
+      road(city, X, Z, CX, CZ, ax, az, sx, sz, lx, lz, fp);
+    } else countryRoad(X, Z, ax, az, fp);
+    return;
+  }
+  const e = Math.min(ns ? ax - hx : 99, ew ? az - hz : 99);
+  if (e < 1.2) {
+    ZONE = Z_WALK;
+    gravel(X, Z, 128, 118, 100);
+    return;
+  }
+  ZONE = Z_LOT;
+  if (e < 3.5) {
+    grass(X, Z, fp);
+    return;
+  }
+  const fx = X - Math.floor(X / F_SIZE) * F_SIZE, fz = Z - Math.floor(Z / F_SIZE) * F_SIZE;
+  if (Math.min(fx, F_SIZE - fx, fz, F_SIZE - fz) < 1.6) {
+    // A strip of rough grass between neighbouring fields.
+    grass(X, Z, fp);
+    R *= 0.8; G *= 0.85; B *= 0.8;
+    return;
+  }
+  field(X, Z, fp, fieldAt(bi, bj));
+}
+
+function countryRoad(X: number, Z: number, ax: number, az: number, fp: number): void {
+  R = 58; G = 58; B = 62; BK = 0.22;
+  if (fp < 0.3) {
+    const h = hash2(Math.floor(X * 3), Math.floor(Z * 3)) & 7;
+    GL = h < 2 ? G_COLON : h < 5 ? G_DOT : G_SPACE;
+  } else GL = fp < 1.4 ? G_COLON : G_DASH;
+  if (CX === CZ) return;
+  const a = CX ? ax : az, fl = CX ? FPX : FPZ;
+  const w = wide(0.1, fl * 0.5);
+  // A double yellow line down the middle and a white line along each edge.
+  if (Math.abs(a - 0.15) < w) {
+    GL = lineGlyph(CX); R = 225; G = 185; B = 55; BK = 0.3; ZONE = Z_CENTRE;
+  } else if (fl < 0.3 && Math.abs(a - (C_HALF - 0.35)) < w) {
+    GL = lineGlyph(CX); R = 190; G = 190; B = 185; BK = 0.25; ZONE = Z_EDGE;
+  }
+}
+
+/**
+ * Crop rows are lines across the field every `s` metres, drawn like paving joints: one glyph wide and
+ * following their slope on screen until they would be only a few cells apart, then a flat tone.
+ */
+function rows(c: number, fc: number, s: number, w: number): boolean {
+  const f = fc / s;
+  if (f >= 0.35) return false;
+  return joint(c / s, w / s, f);
+}
+
+function field(X: number, Z: number, fp: number, f: number): void {
+  const alongX = (f & ROWS_ALONG_X) !== 0;
+  const c = alongX ? Z : X, fc = alongX ? FPZ : FPX;
+  const h = hash2(Math.floor(X * 2), Math.floor(Z * 2));
+  const q = 0.9 + (h & 15) / 80;
+  BK = 0.28;
+  switch (f & 7) {
+    case CROP_CORN:
+    case CROP_SOY: {
+      const soy = (f & 7) === CROP_SOY;
+      if (fc / 0.76 >= 0.35) {
+        GL = soy ? G_COMMA : GRASS[2];
+        R = (soy ? 54 : 64) * q; G = (soy ? 96 : 114) * q; B = (soy ? 42 : 44) * q;
+      } else if (rows(c, fc, 0.76, soy ? 0.4 : 0.3)) {
+        GL = lineGlyph(!alongX);
+        R = (soy ? 50 : 66) * q; G = (soy ? 100 : 132) * q; B = (soy ? 40 : 46) * q;
+      } else {
+        GL = G_DOT; R = 74 * q; G = 58 * q; B = 40 * q;
+      }
+      return;
+    }
+    case CROP_PLOWED:
+      if (fc / 0.9 >= 0.35) {
+        GL = G_TILDE; R = 96 * q; G = 72 * q; B = 50 * q;
+      } else if (rows(c, fc, 0.9, 0.45)) {
+        GL = lineGlyph(!alongX); R = 116 * q; G = 88 * q; B = 60 * q;
+      } else {
+        GL = G_SPACE; R = 70 * q; G = 52 * q; B = 36 * q; BK = 0.4;
+      }
+      return;
+    case CROP_HAY:
+      // Mown, with the hay raked into windrows.
+      if (rows(c, fc, 5, 0.9)) {
+        GL = lineGlyph(!alongX); R = 184 * q; G = 172 * q; B = 98 * q;
+      } else {
+        GL = fp < 0.6 ? GRASS[h & 3] : G_COMMA; R = 118 * q; G = 150 * q; B = 70 * q;
+      }
+      return;
+    case CROP_PASTURE:
+      GL = fp < 0.6 ? GRASS[h & 3] : G_COMMA;
+      R = 56 * q; G = 122 * q; B = 52 * q;
+      return;
+    default: {
+      // Wheat, rippling as the wind runs over it.
+      const wave = 0.86 + 0.14 * Math.sin(X * 0.21 + Z * 0.13 + time * 1.6);
+      GL = fp < 0.6 ? GRASS[(h >> 2) & 3] : G_COMMA;
+      R = 208 * q * wave; G = 174 * q * wave; B = 92 * q * wave; BK = 0.32;
+    }
   }
 }
 

@@ -1,5 +1,5 @@
 import type { Camera } from '../render/camera';
-import { H_DOCKS, H_DOWNTOWN, H_ESTATES, H_JAPAN, H_MEDINA, H_OLDTOWN, H_PARIS, H_SEAFRONT, H_SUBURB } from '../world/hoods';
+import { H_DOCKS, H_DOWNTOWN, H_ESTATES, H_FARMLAND, H_JAPAN, H_MEDINA, H_OLDTOWN, H_PARIS, H_SEAFRONT, H_SUBURB } from '../world/hoods';
 import type { Vehicle } from '../world/traffic';
 import type { EventMode } from '../world/events';
 import { Radio } from './radio';
@@ -10,7 +10,7 @@ export interface SoundState {
   cam: Camera;
   mode: string;
   hood: number;
-  /** Walking inside a building. */
+  /** Walking inside a building, under its roof (an open roof level counts as outdoors). */
   indoors: boolean;
   /** Name of the room program underfoot (e.g. 'NOODLE BAR'), or '' outdoors. */
   room: string;
@@ -183,7 +183,7 @@ export class Sound {
     const s = this.sizzle.getChannelData(0);
     for (let k = 0; k < s.length; k++) s[k] = (Math.random() * 2 - 1) * (Math.random() < 0.002 ? 1 : 0.12);
 
-    this.city = this.bed('lowpass', 420, 0.7, this.outside('ambience'));
+    this.city = this.bed('lowpass', 300, 0.7, this.outside('ambience'));
     this.wind = this.bed('bandpass', 380, 0.5, this.outside('ambience'));
     this.surf = this.bed('lowpass', 520, 0.6, this.outside('ambience'));
     this.rumble = this.bed('lowpass', 160, 0.7, this.inside('traffic'));
@@ -414,10 +414,13 @@ export class Sound {
     this.level(this.outdoor, out ? 1 : 0.55);
 
     // Snow hushes the city; the only sound left is a soft wind.
-    const hum = s.hood === H_DOWNTOWN ? 0.35 : s.hood === H_SUBURB || s.hood === H_ESTATES ? 0.1 : 0.22;
+    const hum = s.hood === H_DOWNTOWN ? 0.14 : s.hood === H_SUBURB || s.hood === H_ESTATES ? 0.04 : s.hood === H_FARMLAND ? 0.015 : 0.09;
     this.level(this.city, hum * (s.cam.y > 60 ? 0.5 : 1) * (snow ? 0.5 : 1));
     if (s.weather === 'rain') this.drops();
-    this.level(this.wind, snow ? 0.12 : 0, 1.5);
+    // High up in the open (the tower's roof, or flying), the wind comes and goes in slow gusts.
+    const high = out && (s.mode === 'walk' || s.mode === 'fly') && s.cam.y > 150;
+    const gust = high ? 0.05 + 0.025 * Math.max(0, Math.sin(this.t * 0.37) + Math.sin(this.t * 0.13 + 1)) : 0;
+    this.level(this.wind, Math.max(snow ? 0.12 : 0, gust), 1.5);
     this.traffic(s);
     this.lift(s);
     this.room(s);

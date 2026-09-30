@@ -15,7 +15,7 @@ import { Input } from './game/input';
 import { type TouchButton, TouchControls, touchDevice } from './game/touch';
 import { Tour } from './game/tour';
 import { MODES, MODE_LABELS, Player, type Mode } from './game/player';
-import { HOODS, HOOD_BLOCKS, hoodAt, nearestRegion } from './world/hoods';
+import { HOODS, HOOD_BLOCKS, H_FARMLAND, hoodAt, nearestRegion } from './world/hoods';
 import { Sound } from './audio/sound';
 import { RADIO_OFF, STATIONS } from './audio/radio';
 import { inCab, levelAt } from './world/interior';
@@ -26,7 +26,7 @@ import { brownoutAt } from './world/events';
 import { setNeon } from './render/facades';
 import { World } from './world/world';
 import { GifRecorder } from './ui/gif';
-import { Hud, type Prompt } from './ui/hud';
+import { Hud, type Prompt, type TowerSpot } from './ui/hud';
 import { PhotoMode } from './ui/photo';
 import { setupPwa } from './ui/pwa';
 import { loadResume, saveResume } from './ui/resume';
@@ -137,32 +137,43 @@ function currentHood(): number {
 function goToHood(hood: number): void {
   const r = nearestRegion(hood, Math.floor(player.x / P), Math.floor(player.z / P));
   if (!r) return;
-  const ci = r[0] * HOOD_BLOCKS + HOOD_BLOCKS / 2, cj = r[1] * HOOD_BLOCKS + HOOD_BLOCKS / 2;
-  player.teleport(ci * P + 8.6, cj * P + 8.6, -2.36, world);
+  if (hood === H_FARMLAND) {
+    // At the country crossroads on the far corner of the section, looking back at the city.
+    const ci = (r[0] + (r[0] >= 0 ? 1 : 0)) * HOOD_BLOCKS, cj = (r[1] + (r[1] >= 0 ? 1 : 0)) * HOOD_BLOCKS;
+    const x = ci * P + (ci > 0 ? 8.6 : -8.6), z = cj * P + (cj > 0 ? 8.6 : -8.6);
+    player.teleport(x, z, Math.atan2(-x, -z), world);
+  } else {
+    const ci = r[0] * HOOD_BLOCKS + HOOD_BLOCKS / 2, cj = r[1] * HOOD_BLOCKS + HOOD_BLOCKS / 2;
+    player.teleport(ci * P + 8.6, cj * P + 8.6, -2.36, world);
+  }
   world.city.prime();
 }
 
 /**
- * The Glyph Tower, from anywhere: on the forecourt at its doors, or straight up on the observation deck,
- * just inside the glass between the telescopes and the benches, looking out over the city.
+ * The Glyph Tower, from anywhere: on the forecourt at its doors, straight up on the observation deck
+ * just inside the glass between the telescopes and the benches, or on the open roof above it, looking
+ * out over the city.
  */
-function goToTower(deck: boolean): void {
+function goToTower(where: TowerSpot): void {
   const tower = world.city.get(LANDMARK_I, LANDMARK_J).interiors.find((it) => it.label === 'GLYPH TOWER');
   if (!tower) return;
   const d = tower.door;
-  if (!deck) {
+  const lv = where === 'roof' ? tower.levels.find((l) => l.open) : tower.levels.find((l) => l.room === 'SKYDECK');
+  if (where === 'door' || !lv) {
     player.teleport(d.x + d.nx * 3.8, d.z + d.nz * 3.8, Math.atan2(-d.nx, -d.nz), world);
     player.pitch = 0.45;
-    toast('The Glyph Tower. Walk in; the lift at the back goes up to the observation deck.', 3500);
+    toast('The Glyph Tower. Walk in; the lift at the back goes up to the observation deck and the open roof.', 3500);
   } else {
-    const top = tower.levels[tower.levels.length - 1];
-    const x0 = (tower.x0 + tower.x1) / 2, z = d.z - d.nz * 2.4;
-    const x = [3, -3, 6, -6, 0].map((o) => x0 + d.tx * o).find((x) => !world.blocked(x, z, 0.35, top.y)) ?? x0;
+    // On the roof, right at the railing: any further back and its edge hides everything below.
+    const x0 = (tower.x0 + tower.x1) / 2, z = d.z - d.nz * (where === 'roof' ? 1.7 : 2.4);
+    const x = [3, -3, 6, -6, 0].map((o) => x0 + d.tx * o).find((x) => !world.blocked(x, z, 0.35, lv.y)) ?? x0;
     player.teleport(x, z, Math.atan2(d.nx, d.nz), world);
-    player.floorY = top.y;
-    player.y = top.y + EYE_H;
-    player.pitch = -0.22;
-    toast(`Glyph Tower observation deck, ${Math.round(top.y)} m up. The lift goes back down.`, 3500);
+    player.floorY = lv.y;
+    player.y = lv.y + EYE_H;
+    player.pitch = where === 'roof' ? -0.55 : -0.22;
+    toast(where === 'roof'
+      ? `The roof of the Glyph Tower, ${Math.round(lv.y)} m up, open to the sky. The lift goes back down.`
+      : `Glyph Tower observation deck, ${Math.round(lv.y)} m up. The lift goes up to the open roof, or back down.`, 3500);
   }
   world.city.prime();
 }
@@ -224,7 +235,7 @@ function cycleMap(): void {
 
 const hud = new Hud({
   onHood: (hood) => goToHood(hood),
-  onTower: (deck) => goToTower(deck),
+  onTower: (where) => goToTower(where),
   onCell: (id) => {
     quality.set(id);
     settings.cell = quality.cellSetting;
@@ -744,7 +755,7 @@ function handleKeys(): void {
       case 'KeyV': player.cycle(1, world); break;
       case 'KeyN': player.next(world); break;
       case 'KeyB': goToHood((currentHood() + 1) % HOODS.length); break;
-      case 'KeyK': goToTower(true); break;
+      case 'KeyK': goToTower('deck'); break;
       case 'KeyM': cycleMap(); break;
       case 'KeyE':
         if (riding()) tune(settings.station + 1);
@@ -931,7 +942,7 @@ function soundFrame(dt: number): void {
   sound.update({
     dt, cam, mode: player.mode,
     hood: hoodAt(Math.floor(cam.x / P), Math.floor(cam.z / P)),
-    indoors: indoors !== null,
+    indoors: indoors !== null && !lv?.open,
     room: lv?.room ?? '',
     weather: settings.weather,
     lift: player.liftPhase,

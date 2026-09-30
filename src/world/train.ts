@@ -8,9 +8,9 @@ import { hash3, mulberry32 } from '../core/hash';
 import { BOX_BOTTOM, BOX_SIDES, BOX_TOP, FACE_STRIDE, FaceList } from './faces';
 import { worldSeed } from './layout';
 import {
-  BENCH_A, CARS, CAR_FLOOR, CAR_GAP, CAR_HALF_W, CAR_LEN, COLUMN, EDGE_L, LANDING_A, PLAT_HALF, PLAT_L, PLAT_Y, POST_A,
-  type PathPoint, ROOF_Y, STAIR_FOOT, STAIR_L, STAIR_TOP, STEP, type Station, TRAINS, type TrainState, carPoint, cellOf,
-  crowdSlot, stationNear, stationsOf, trainAt, trainState,
+  BENCH_A, CARS, CAR_FLOOR, CAR_GAP, CAR_HALF_W, CAR_LEN, CITY_CELLS, COLUMN, EDGE_L, LANDING_A, PLAT_HALF, PLAT_L, PLAT_Y,
+  POST_A, type PathPoint, ROOF_Y, STAIR_FOOT, STAIR_L, STAIR_TOP, STEP, type Station, TRAINS, type TrainState, carPoint,
+  cellOf, crowdSlot, hasLoop, stationNear, stationsOf, trainAt, trainState,
 } from './loop';
 import { POSE_CHAIR, POSE_STAND, PERSON_STRIDE, drawOccupants } from './occupants';
 import { SIGN_CHAR_W, SIGN_H, SIGN_PAD, SIGN_TEXTS, type RGB, signSeed } from './signs';
@@ -235,9 +235,10 @@ export class Rail {
     return carPoint(ref.cx, ref.cz, this.train(ref).s, m, out);
   }
 
-  /** The train of the loop around (x, z) that is closest to it. */
+  /** The train of the loop around (x, z) that is closest to it; from the farmland, of the nearest city loop. */
   nearest(x: number, z: number): TrainRef {
-    const cx = cellOf(x), cz = cellOf(z);
+    const cx = Math.max(-CITY_CELLS, Math.min(CITY_CELLS - 1, cellOf(x)));
+    const cz = Math.max(-CITY_CELLS, Math.min(CITY_CELLS - 1, cellOf(z)));
     let best = 0, bd = Infinity;
     for (let k = 0; k < TRAINS; k++) {
       const p = this.car({ cx, cz, k }, 1);
@@ -281,6 +282,7 @@ export class Rail {
     const p = this.pt, t = this.state;
     for (let cx = cx0; cx <= cx1; cx++) {
       for (let cz = cz0; cz <= cz1; cz++) {
+        if (!hasLoop(cx, cz)) continue;
         for (let k = 0; k < TRAINS; k++) {
           trainState(cx, cz, k, this.time, t);
           const own = riding !== null && riding.cx === cx && riding.cz === cz && riding.k === k;

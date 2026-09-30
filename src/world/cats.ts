@@ -5,7 +5,7 @@ import { glyph } from '../core/charset';
 import { hash3, mulberry32 } from '../core/hash';
 import type { City } from './city';
 import { FACE_STRIDE } from './faces';
-import { HOODS } from './hoods';
+import { HOODS, H_FARMLAND, roadEW, roadNS } from './hoods';
 import { inCab } from './interior';
 import { LOT_EDGE, P, worldSeed } from './layout';
 
@@ -103,8 +103,10 @@ export class Cats {
         return make(x, lv.y, z, rnd() * Math.PI * 2, 'shop');
       }
     }
+    // Out in the farmland, only by a road: never up a tree or out in the middle of a field.
+    const rural = b.hood === H_FARMLAND;
     // On a roof or ledge: any upward face big enough to sit on.
-    if (roll < 0.65) {
+    if (roll < 0.65 && !rural) {
       const f = b.faces;
       const tops: number[][] = [];
       for (let o = 0; o < f.length; o += FACE_STRIDE) {
@@ -131,6 +133,7 @@ export class Cats {
       const off = LOT_EDGE - 0.6;
       const x = i * P + (side === 0 ? off : side === 1 ? P - off : a);
       const z = j * P + (side === 2 ? off : side === 3 ? P - off : a);
+      if (rural && !(side === 0 ? roadNS(i, j) : side === 1 ? roadNS(i + 1, j) : side === 2 ? roadEW(j, i) : roadEW(j + 1, i))) continue;
       if (this.city.collides(x, z, 0.3, 0)) continue;
       const yaw = side === 0 ? -Math.PI / 2 : side === 1 ? Math.PI / 2 : side === 2 ? Math.PI : 0;
       return make(x, 0, z, yaw, 'street');

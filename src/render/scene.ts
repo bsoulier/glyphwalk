@@ -7,11 +7,11 @@ import type { Vehicle } from '../world/traffic';
 import { LIGHT_BLINK, LIGHT_FAR, LIGHT_LANTERN } from '../world/build';
 import { LIGHT_STRIDE, POLE_STRIDE } from '../world/city';
 import { FACE_STRIDE } from '../world/faces';
-import { type Interior, drawInterior } from '../world/interior';
+import { type Interior, drawInterior, levelAt } from '../world/interior';
 import { type Cab, drawCabin } from '../world/cabin';
 import { type OtherPlayer, drawOtherTags, drawOthers } from '../world/others';
 import type { TrainRef } from '../world/train';
-import { isLandmark } from '../world/layout';
+import { EYE_H, isLandmark } from '../world/layout';
 import { drawBackground } from './background';
 import type { Daylight } from './daylight';
 import { beginMaterials } from './materials';
@@ -78,7 +78,8 @@ export function renderScene(fb: FrameBuffer, cam: Camera, world: World, env: Fra
   world.fireworks.draw(fb, cam, env.weather === 'fog' ? FOG_DENSITY : 0);
   if (env.others.length > 0) drawOtherTags(cam, env.others);
   // Indoors, only drops beyond the far wall can be outside; nearer ones would fall in the room (or the cab).
-  if (rain.on) rain.draw(fb, indoors ? farCorner(indoors, cam) : env.cab ? CAB_REACH : env.train ? CAR_REACH : 0);
+  const open = indoors !== null && levelAt(indoors, cam.y - EYE_H)?.open === true;
+  if (rain.on) rain.draw(fb, indoors && !open ? farCorner(indoors, cam) : env.cab ? CAB_REACH : env.train ? CAR_REACH : 0);
 }
 
 /** From the back seat, anything nearer than this is inside the car. */

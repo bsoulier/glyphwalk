@@ -5,7 +5,7 @@ import {
   fountain, jitter, park, pick, sideOf, streetSides, streetTrees, wallSign,
 } from '../build';
 import { BOX_DEFAULT, BOX_SIDES, BOX_TOP } from '../faces';
-import { LOBBY, LOUNGE, OFFICE, SKYDECK } from '../furniture';
+import { LOBBY, LOUNGE, OFFICE, OPEN_SKY, SKYDECK } from '../furniture';
 import { enterable } from '../interior';
 import { KIND_PARK, KIND_PLAZA, P, heightScale, isLandmark } from '../layout';
 import { NEON, SIGNS_DOWNTOWN, TEXT_LOBBY, TEXT_SKYDECK, TEXT_TOWER, type RGB } from '../signs';
@@ -97,9 +97,9 @@ const RING: RGB = [90, 220, 255];
 const FIN: RGB = [176, 184, 198];
 
 /**
- * The Glyph Tower: a glass shaft you can walk into, with a lobby, a sky lounge halfway up and the
- * observation deck on the top floor, all glass. Outside: corner fins, neon rings every 60 m, a glowing
- * crown and a spire with beacons.
+ * The Glyph Tower: a glass shaft you can walk into, with a lobby, a sky lounge halfway up, the
+ * observation deck on the top floor, all glass, and the open roof above it. Outside: corner fins,
+ * neon rings every 60 m, and in the middle of the roof a glowing crown and a spire with beacons.
  */
 function glyphTower(B: Builder, lot: Rect): void {
   const { faces } = B;
@@ -113,7 +113,7 @@ function glyphTower(B: Builder, lot: Rect): void {
   enterable(B, {
     rect: r, side: 0, h, mat: M_WALL, color: c, seed, capMat: M_ROOF, mask: BOX_SIDES | BOX_TOP,
     doorW: 3, label: 'GLYPH TOWER', sign: TEXT_TOWER, open: false, canopy: true,
-    programs: [LOBBY, LOUNGE, SKYDECK], text: TEXT_SKYDECK,
+    programs: [LOBBY, LOUNGE, SKYDECK], roof: OPEN_SKY, text: TEXT_SKYDECK,
   });
 
   for (const [sx, sz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
@@ -129,19 +129,22 @@ function glyphTower(B: Builder, lot: Rect): void {
       B.lights.push(cx + sx * (half + 0.4), y + 0.2, cz + sz * (half + 0.4), RING[0], RING[1], RING[2], LIGHT_LANTERN);
     }
   }
-  // Crown: a lit glass storey, a glowing lantern, a plinth and the spire.
+  // Crown in the middle of the roof, with the open deck walking round it: a lit glass storey, a
+  // glowing lantern, a plinth and the spire. It only blocks walkers on the roof, not the floors below.
   const crown = facadeSeed(F_GLASS, 0, 7, 1, 2719);
-  faces.box(cx - 11, h, cz - 11, cx + 11, h + 16, cz + 11, M_WALL, c[0], c[1], c[2], crown, M_ROOF, BOX_SIDES | BOX_TOP);
-  faces.box(cx - 7, h + 16, cz - 7, cx + 7, h + 26, cz + 7, M_NEON, 255, 206, 130, 0, M_ROOF, BOX_SIDES | BOX_TOP);
-  faces.box(cx - 3, h + 26, cz - 3, cx + 3, h + 32, cz + 3, M_CONCRETE, FIN[0], FIN[1], FIN[2], 0);
+  const ch = 7;
+  faces.box(cx - ch, h, cz - ch, cx + ch, h + 14, cz + ch, M_WALL, c[0], c[1], c[2], crown, M_ROOF, BOX_SIDES | BOX_TOP);
+  B.levelColliders.push(cx - ch, cz - ch, cx + ch, cz + ch, h - 0.5, 1e5);
+  faces.box(cx - 4.5, h + 14, cz - 4.5, cx + 4.5, h + 23, cz + 4.5, M_NEON, 255, 206, 130, 0, M_ROOF, BOX_SIDES | BOX_TOP);
+  faces.box(cx - 2, h + 23, cz - 2, cx + 2, h + 29, cz + 2, M_CONCRETE, FIN[0], FIN[1], FIN[2], 0);
   const top = h + 110;
-  B.poles.push(cx, h + 32, top, cz, 0.45, 200, 206, 216, G_PIPE, M_RAIL);
+  B.poles.push(cx, h + 29, top, cz, 0.45, 200, 206, 216, G_PIPE, M_RAIL);
   for (const y of [h + 60, h + 85, top]) B.lights.push(cx, y, cz, 255, 40, 40, LIGHT_BLINK);
   for (const [sx, sz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
-    B.lights.push(cx + sx * 11, h + 16.5, cz + sz * 11, 255, 40, 40, LIGHT_BLINK);
-    B.lights.push(cx + sx * 7.2, h + 21, cz + sz * 7.2, 255, 206, 130, LIGHT_LANTERN);
+    B.lights.push(cx + sx * ch, h + 14.5, cz + sz * ch, 255, 40, 40, LIGHT_BLINK);
+    B.lights.push(cx + sx * 4.7, h + 19, cz + sz * 4.7, 255, 206, 130, LIGHT_LANTERN);
   }
-  for (let s = 0; s < 4; s++) wallSign(B, sideOf({ x0: cx - 11, z0: cz - 11, x1: cx + 11, z1: cz + 11 }, s), [TEXT_SKYDECK], [RING], h + 3, 2);
+  for (let s = 0; s < 4; s++) wallSign(B, sideOf({ x0: cx - ch, z0: cz - ch, x1: cx + ch, z1: cz + ch }, s), [TEXT_SKYDECK], [RING], h + 9, 1.5);
 
   // Podium wings either side of the entrance, and fountains on the forecourt.
   const podium = facadeSeed(F_GLASS, 0, 5, 1, 2720);

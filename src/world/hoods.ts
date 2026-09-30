@@ -16,9 +16,17 @@ export const H_SUBURB = 5;
 export const H_ESTATES = 6;
 export const H_SEAFRONT = 7;
 export const H_MEDINA = 8;
+export const H_FARMLAND = 9;
+
+/**
+ * The city stops this many blocks out from the origin on each axis, and farmland starts. It is a whole
+ * number of monorail cells (LOOP_BLOCKS) and of district regions, so no loop line or district is cut in two.
+ */
+export const CITY_HALF = 24;
 
 export interface Hood {
   name: string;
+  /** Share of the city's regions; 0 for the farmland, which is everything outside the city. */
   weight: number;
   /**
    * Districts in the second set are placed by their own roll over a share of the regions, so every
@@ -41,6 +49,7 @@ export const HOODS: readonly Hood[] = [
   { name: 'SILVER HILLS', weight: 2, second: true, lamp: [255, 228, 180], lampH: 4.0, map: [200, 204, 222] },
   { name: 'SEAFRONT', weight: 2, second: true, lamp: [255, 190, 170], lampH: 5.6, map: [255, 130, 180] },
   { name: 'MEDINA', weight: 2, second: true, lamp: [255, 170, 80], lampH: 4.0, map: [240, 190, 60] },
+  { name: 'FARMLAND', weight: 0, lamp: [255, 214, 160], lampH: 0, map: [150, 150, 70] },
 ];
 
 /** Percentage of regions (other than the city centre) that go to the second set of districts. */
@@ -52,7 +61,31 @@ HOODS.forEach((h, k) => {
   for (let n = 0; n < h.weight; n++) (h.second ? PICK_SECOND : PICK).push(k);
 });
 
+export function inCity(bi: number, bj: number): boolean {
+  return bi >= -CITY_HALF && bi < CITY_HALF && bj >= -CITY_HALF && bj < CITY_HALF;
+}
+
+/**
+ * Is there a road on the line x = n * P between z = m * P and (m + 1) * P? In the city there is one on
+ * every line, the edge of the city included; out in the farmland only along region lines, round sections
+ * of HOOD_BLOCKS x HOOD_BLOCKS blocks of fields.
+ */
+export function roadNS(n: number, m: number): boolean {
+  return n % HOOD_BLOCKS === 0 || inCity(n - 1, m) || inCity(n, m);
+}
+
+/** Is there a road on the line z = n * P between x = m * P and (m + 1) * P? */
+export function roadEW(n: number, m: number): boolean {
+  return n % HOOD_BLOCKS === 0 || inCity(m, n - 1) || inCity(m, n);
+}
+
+/** City junctions have traffic lights; country crossroads do not. */
+export function signalled(i: number, j: number): boolean {
+  return inCity(i - 1, j - 1) || inCity(i, j - 1) || inCity(i - 1, j) || inCity(i, j);
+}
+
 export function hoodOfRegion(ri: number, rj: number): number {
+  if (!inCity(ri * HOOD_BLOCKS, rj * HOOD_BLOCKS)) return H_FARMLAND;
   if (ri === 0 && rj === 0) return H_DOWNTOWN;
   if (hash3(ri, rj, worldSeed ^ 0x5eb) % 100 < SECOND_SHARE) {
     return PICK_SECOND[hash3(ri, rj, worldSeed ^ 0x6c1) % PICK_SECOND.length];
