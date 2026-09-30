@@ -6,7 +6,7 @@ import { WEATHERS, WEATHER_LABELS, type Weather } from '../render/weather';
 import { EVENT_LABELS, EVENT_MODES, type EventMode } from '../world/events';
 import { HOODS } from '../world/hoods';
 import { CELL_PRESETS } from './quality';
-import type { Settings } from './settings';
+import { LUDICROUS_DIST, type Settings } from './settings';
 
 export interface HudHandlers {
   onHood(hood: number): void;
@@ -34,7 +34,7 @@ export interface HudHandlers {
 /** One thing that can be done right now: a key (empty for plain advice) and what it does. */
 export type Prompt = readonly [key: string, action: string];
 
-const DISTANCES = [120, 180, 260, 400, 600];
+const DISTANCES = [120, 180, 260, 400, 600, LUDICROUS_DIST];
 const FOVS = [50, 62, 75, 90];
 const FPS = [30, 60];
 
@@ -110,7 +110,7 @@ export class Hud {
     this.hood.append(landmark);
     fill(this.cell, [['auto', 'Auto (fit target FPS)'], ...CELL_PRESETS.map((p): [string, string] => [p.id, p.label])]);
     fill(this.fps, FPS.map((f): [string, string] => [String(f), `${f} fps`]));
-    fill(this.dist, DISTANCES.map((d): [string, string] => [String(d), `${d} m`]));
+    fill(this.dist, DISTANCES.map((d): [string, string] => [String(d), d === LUDICROUS_DIST ? `${d} m (ludicrous)` : `${d} m`]));
     fill(this.fov, FOVS.map((f): [string, string] => [String(f), `${f} deg`]));
     fill(this.style, STYLE_NAMES.map((n, k): [string, string] => [String(k), n]));
     const bind = (sel: HTMLSelectElement, fn: (v: string) => void) => {

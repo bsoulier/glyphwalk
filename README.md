@@ -130,7 +130,8 @@ in the city and your emotes with players nearby; the server keeps nothing.
 - **Sound** (`src/audio/`): everything is synthesized with the Web Audio API from oscillators and noise, including the
   radio stations, which are composed a fraction of a second ahead of the audio clock.
 - **Quality** (`src/ui/quality.ts`): cell size, draw distance and pixel density adjust themselves to hold the target
-  frame rate, so it stays smooth on slower phones.
+  frame rate, so it stays smooth on slower phones. The "ludicrous" draw distance (1500 m) is the exception: it is left
+  as set, at your own risk.
 - **Offline**: the build generates a service worker that precaches every file.
 - **Online** (`src/net/`, `server/`): a Cloudflare Worker with one Durable Object per 1 km zone of the city relays
   positions in a compact binary format; the city itself is never sent, since every player generates the same one.

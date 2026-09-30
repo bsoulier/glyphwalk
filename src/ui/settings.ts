@@ -33,6 +33,12 @@ export interface Settings {
   online: boolean;
 }
 
+/**
+ * The "ludicrous" draw distance: far past what the game is tuned for, offered anyway with a warning. The
+ * automatic detail level leaves it alone, since it would only take it back, so frames run as slow as they must.
+ */
+export const LUDICROUS_DIST = 1500;
+
 const KEY = 'glyphwalk.settings.v1';
 
 const DEFAULTS: Settings = {

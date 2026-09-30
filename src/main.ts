@@ -34,7 +34,7 @@ import { shareUrl, viewUrl } from './ui/share';
 import { toast } from './ui/toast';
 import { CATS_PER_HOOD } from './world/cats';
 import { MAX_DETAIL, Quality, lowEndDevice } from './ui/quality';
-import { loadSettings, saveSettings } from './ui/settings';
+import { LUDICROUS_DIST, loadSettings, saveSettings } from './ui/settings';
 import { trackEvent, trackVisit } from './ui/analytics';
 import { Online } from './net/online';
 import { loadOnlineId, newOnlineId, saveOnlineId } from './net/identity';
@@ -249,6 +249,9 @@ const hud = new Hud({
   },
   onDist: (dist) => {
     settings.dist = dist;
+    if (dist >= LUDICROUS_DIST) {
+      toast(`Ludicrous draw distance: ${dist} m. The game is not made for this: expect low frame rates, stutters and a warm device. You are doing this at your own risk.`, 6000);
+    }
     persist();
   },
   onFov: (fov) => {
@@ -348,6 +351,7 @@ window.addEventListener('resize', layout);
 layout();
 hud.sync(settings, quality.cellSetting);
 hud.openSections(settings.open);
+if (settings.dist >= LUDICROUS_DIST) toast('Ludicrous draw distance is on, at your own risk (Display > Draw distance).', 4000);
 hud.setOnline(online !== null, online ? playerName(online.myId) : '');
 
 const hudEl = document.getElementById('hud') as HTMLElement;
@@ -976,12 +980,13 @@ function soundFrame(dt: number): void {
 }
 
 /**
- * Draw distance after the automatic detail level, and capped in fog where nothing further shows. High
- * up (the Glyph Tower's deck, flying) it reaches further, or the city below would fall outside it.
+ * Draw distance after the automatic detail level (which leaves ludicrous alone), and capped in fog where nothing
+ * further shows. High up (the Glyph Tower's deck, flying) it reaches further, or the city below would fall outside it.
  */
 function drawDist(): number {
   const reach = Math.min(900, Math.max(0, cam.y - 30) * 1.6);
-  const d = Math.round((settings.dist + reach) * quality.distScale);
+  const scale = settings.dist >= LUDICROUS_DIST ? 1 : quality.distScale;
+  const d = Math.round((settings.dist + reach) * scale);
   return settings.weather === 'fog' ? Math.min(d, FOG_FAR) : d;
 }
 
