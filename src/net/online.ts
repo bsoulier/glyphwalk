@@ -23,6 +23,10 @@ const TELEPORT = 40;
 const SAMPLES = 4;
 /** Connections and sends are looked after this often, not every frame. */
 const RUN_MS = 100;
+const CLOSE_TEXT: Record<number, string> = {
+  [CLOSE_FULL]: 'room full', [CLOSE_TAKEN]: 'id taken', [CLOSE_BAD]: 'bad message', [CLOSE_FLOOD]: 'too many messages',
+  [CLOSE_OUTDATED]: 'page outdated', 1000: 'closed', 1006: 'connection lost',
+};
 
 /** Another player as last heard, with a few timed samples to move smoothly between. */
 export class Remote {
@@ -121,6 +125,9 @@ class ZoneLink {
   sent: PlayerState | null = null;
   pingAt = 0;
   pongDue = 0;
+  /** For Stats for nerds: messages heard, and how the connection last ended (a close code, or 0). */
+  received = 0;
+  lastClose = 0;
 
   constructor(readonly zx: number, readonly zz: number) {}
 
@@ -165,7 +172,7 @@ export class Online {
   /** Takes a new id, and so a new name, reconnecting under it. */
   setId(id: number): void {
     this.id = id;
-    for (const link of this.links.values()) link.ws?.close(1000);
+    for (const link of this.links.values()) link.ws?.close(1000, 'new name');
   }
 
   /** The district the player is in, for the city's head count; the rooms hear only when it changes. */
@@ -191,7 +198,7 @@ export class Online {
     this.clock = now;
     if (this.status === 'outdated') return;
     if (!on || !active) {
-      this.closeAll();
+      this.closeAll(on ? 'away' : 'online off');
       this.status = on ? 'paused' : 'off';
       return;
     }
@@ -199,7 +206,7 @@ export class Online {
     this.lastRun = now;
     const keep = new Set(zonesNear(self.x, self.z, KEEP_R).map(([a, b]) => `${a},${b}`));
     for (const [key, link] of this.links) {
-      if (!keep.has(key)) this.dropLink(link);
+      if (!keep.has(key)) this.dropLink(link, 'out of range');
     }
     for (const [zx, zz] of zonesNear(self.x, self.z, JOIN_R)) {
       const key = `${zx},${zz}`;
@@ -212,7 +219,7 @@ export class Online {
       if (!link.open || !link.ws) continue;
       open++;
       if (link.pongDue > 0 && now > link.pongDue) {
-        link.ws.close();
+        link.ws.close(1000, 'no pong');
         continue;
       }
       if (now - link.pingAt > PING_MS) {
@@ -245,6 +252,18 @@ export class Online {
     link.ws.send(encodeEmote(k));
     this.lastEmote = now;
     return true;
+  }
+
+  /**
+   * One line per zone connection, for Stats for nerds: the zone and layer (players see each other only
+   * in the same one), whether it is open, and why it last closed. `now` is performance.now().
+   */
+  linkLines(now: number): string[] {
+    return [...this.links.values()].map((l) => {
+      const state = l.open ? 'open' : l.ws ? 'connecting' : `retry in ${Math.max(0, Math.ceil((l.retryAt - now) / 1000))} s`;
+      const why = l.lastClose ? `, last closed: ${CLOSE_TEXT[l.lastClose] ?? l.lastClose}` : '';
+      return `${l.key} layer ${l.layer}${l.key === this.homeKey ? ' (you are here)' : ''}: ${state}, ${l.received} received${why}`;
+    });
   }
 
   /** The others moved to where they are drawn now, nearest first and at most `max` of them. */
@@ -311,6 +330,7 @@ export class Online {
       if (this.hood >= 0) ws.send(encodeHood(this.hood));
     };
     ws.onmessage = (e: MessageEvent) => {
+      link.received++;
       if (typeof e.data === 'string') {
         if (e.data === 'pong') link.pongDue = 0;
         return;
@@ -333,6 +353,7 @@ export class Online {
     const lasted = link.open ? now - link.openedAt : 0;
     link.ws = null;
     link.open = false;
+    link.lastClose = code;
     for (const r of this.others.values()) if (r.from === link && r.goneAt === 0) r.goneAt = now;
     // Links dropped on purpose stay dropped.
     if (this.links.get(link.key) !== link) return;
@@ -349,7 +370,7 @@ export class Online {
         this.id = newOnlineId();
         this.onNewId?.(this.id);
         link.retryAt = now;
-        for (const other of this.links.values()) other.ws?.close(1000);
+        for (const other of this.links.values()) other.ws?.close(1000, 'new name');
         return;
       case CLOSE_OUTDATED:
         this.status = 'outdated';
@@ -365,13 +386,14 @@ export class Online {
     link.backoff = Math.min(30000, link.backoff * 2);
   }
 
-  private dropLink(link: ZoneLink): void {
+  /** `reason` is one of the few words the server logs (CLIENT_REASONS in server/src/index.ts). */
+  private dropLink(link: ZoneLink, reason?: string): void {
     this.links.delete(link.key);
-    link.ws?.close(1000);
+    link.ws?.close(1000, reason);
   }
 
-  private closeAll(): void {
-    for (const link of [...this.links.values()]) this.dropLink(link);
+  private closeAll(reason?: string): void {
+    for (const link of [...this.links.values()]) this.dropLink(link, reason);
     this.others.clear();
     this.city = null;
   }

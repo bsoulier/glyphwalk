@@ -104,8 +104,9 @@ glow (lamps, signs, windows at night).
   `EMOTES` (`net/protocol.ts`), append only, with texts the font can draw. Keep both lists harmless. The world is never
   sent (it is a function of the seed); only position, mode, heading and emotes. Any incompatible change to the wire
   format bumps `PROTOCOL`; deploy the server before the site. Room logic stays in `server/src/zone.ts`, free of
-  Cloudflare APIs, so it is tested in Node. Idle and hidden clients must keep disconnecting: they are what keeps the
-  server cheap.
+ Cloudflare APIs, so it is tested in Node. Idle and hidden clients must keep disconnecting: they are what keeps the
+ server cheap. The server's log (`log()` in `server/src/index.ts`, kept by Workers Logs) and `/debug` carry names,
+ rooms, counts and distances only, never a position or an address; log per event, never per message.
 - **No secrets in the repository.** `.env.production` holds public values only (the online server URL and the
   GoatCounter code, both visible in the page); `tests/unit/secrets.test.ts` fails on anything else there, on files
   like `.env`, `.dev.vars` or keys, and on token-shaped strings in any tracked file. Cloudflare credentials stay in

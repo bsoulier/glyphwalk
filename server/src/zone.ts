@@ -114,6 +114,24 @@ export class ZoneCore {
     return [...by];
   }
 
+  /**
+   * Who is in the room, for the server's log: each placed player, whether it stands here or only watches
+   * across the edge, how many players it was last sent, and how far the nearest one standing here is
+   * (whole metres, -1 for nobody). Distances only, so the log never holds where anyone is.
+   */
+  snapshot(): { id: number; home: boolean; seen: number; nearest: number }[] {
+    const out: { id: number; home: boolean; seen: number; nearest: number }[] = [];
+    for (const w of this.peers.values()) {
+      if (!w.placed) continue;
+      let d2 = Infinity;
+      for (const p of this.peers.values()) {
+        if (p !== w && p.placed && p.home) d2 = Math.min(d2, (p.x - w.x) ** 2 + (p.z - w.z) ** 2);
+      }
+      out.push({ id: w.id, home: w.home, seen: w.known.size, nearest: d2 === Infinity ? -1 : Math.round(Math.sqrt(d2)) });
+    }
+    return out;
+  }
+
   /** Handles one message. Returns 0, or a close code the caller should disconnect the client with. */
   receive(p: Peer, data: ArrayBuffer, now: number): number {
     p.tokens = Math.min(BURST, p.tokens + ((now - p.refilled) * RATE) / 1000);

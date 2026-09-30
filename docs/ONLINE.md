@@ -25,10 +25,12 @@ are in each district (`JAPANTOWN (12 online)`), so it doubles as a way to go whe
 
 Each zone room counts the players standing in it, by district (the page says which district it is in when that
 changes), and reports to one `Stats` object per city: 5 s after someone arrives, leaves or changes district, and every
-45 s while it is occupied, using an alarm so a sleeping room still reports. The reply is the whole city's count, which
-the room passes to its players over their existing connections, so pages never poll. Counts are therefore up to about
-a minute behind, and a room that vanishes without reporting drops out after 150 s. Only connected players count:
-hidden tabs and idle players have already disconnected.
+45 s while someone stands in it, using an alarm so a sleeping room still reports. The reply is the whole city's count,
+which the room passes to its players over their existing connections, so pages never poll. Counts are therefore up to
+about a minute behind, and a room that vanishes without reporting drops out after 150 s. Only connected players count:
+hidden tabs and idle players have already disconnected. Cloudflare takes the `Stats` object out of memory about 10 s
+after its last call, so it keeps each room's count in its storage too, rewriting an unchanged one at most once a
+minute.
 
 The same numbers are public as JSON, cached for 30 s:
 <https://glyphwalk-online.benjamin-soulier.workers.dev/stats> (add `?seed=42` for another city):
@@ -36,6 +38,34 @@ The same numbers are public as JSON, cached for 30 s:
 ```json
 {"seed":1337,"online":57,"districts":{"DOWNTOWN":31,"JAPANTOWN":12,"MEDINA":14}}
 ```
+
+## When players do not see each other
+
+Two players see each other only when all of these hold:
+
+- **Within 150 m.** A district is far bigger than that, so "2 online" in the District list can be two players a
+  kilometre apart; the ONLINE line then reads `nobody within 150 m, 2 in the city`. To meet, one shares a link
+  ("Share this view", `L`) and the other opens it.
+- **The same city**: a link with `seed=` is another city (Stats for nerds shows the world seed).
+- **Both connected**: a tab hidden for 20 s, or a player idle for 10 minutes, disconnects (`paused while away`).
+  Two tabs of one window cannot test this, since one of them is always hidden: use two windows side by side.
+- **The same layer**, which only differs once a zone room holds 250 players.
+
+To find out which one fails:
+
+- **Stats for nerds** (`I`) shows the player's name, status, how many are in sight and how far the nearest is, and a
+  line per zone connection (`0,0 layer 0 (you are here): open, 42 received`, with why it last closed). Two players
+  standing together must both be open on the same zone and layer.
+- **<https://glyphwalk-online.benjamin-soulier.workers.dev/debug>** (add `?seed=42` for another city) lists the
+  occupied rooms: each zone (1024 m squares, with the x and z it covers), its layer, its players by district and
+  how long ago its count was recorded (up to a minute more than its last report, see above). Counts only, cached
+  for 5 s.
+- **The server's log**: `cd server && npx wrangler tail` streams it live, and the Cloudflare dashboard (Workers &
+  Pages > glyphwalk-online > Logs) keeps it for a few days. One line per event, with the room as
+  `seed/zx/zz/layer`: `join` and `refused` (with the reason, such as `outdated page` or `full`), `placed` (the first
+  position arrived, `here: false` for a player only watching across the zone's edge), `leave` (with the close
+  reason), and `room`, each time a room reports its head count: who is in it, how many players each is sent
+  (`sees`) and how far away the nearest one standing there is (`nearest`, in metres).
 
 ## How it scales
 
@@ -74,7 +104,9 @@ request, and 13,000 GB-s a day of Durable Object time (a room is billed at 128 M
   a day while everyone keeps moving (standing still sends nothing).
 - Time: an awake room costs 450 GB-s an hour, so about 29 room-hours a day.
 - Head counts: an occupied room reports about 80 times an hour (a report and an alarm each time), so about 4,000
-  requests a day for a room that is never empty.
+  requests a day for a room that is never empty. Its count is written to storage when it changes, else at most once a
+  minute: about 40 rows an hour, 1,000 a day of the free 100,000.
+- Logs: three lines per connection (join, placed, leave) and one per report, far under the free 200,000 a day.
 
 Over the free limits, joining fails until 00:00 UTC and the game carries on single-player. The Workers Paid plan
 ($5/month) includes 1 million requests and 400,000 GB-s a month, then $0.15 per million requests and $12.50 per
@@ -95,10 +127,13 @@ million GB-s: roughly half a cent per room-hour. See the
 
 ## Privacy
 
-The server stores nothing: positions live in memory while players are connected, and a room keeps only the last
+The server stores no positions: they live in memory while players are connected, and a room keeps only the last
 position of each open socket so it can sleep. The only thing sent is where the player is, their camera mode and
 heading, and emotes. The id (and so the name) is random, kept in `localStorage` under `glyphwalk.online.v1`, and
 re-drawn with "new name". Cloudflare sees connecting IP addresses, as any host does; the Worker does not log them.
+Its log (see above) holds only generated names, rooms, counts, close reasons and distances between players, never a
+position; invocation logs are off (`observability` in [`server/wrangler.jsonc`](../server/wrangler.jsonc)), so no
+request details are kept either. Set `"enabled": false` there to stop keeping the log.
 
 ## Deploying the server
 

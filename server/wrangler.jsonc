@@ -14,6 +14,13 @@
     { "tag": "v1", "new_sqlite_classes": ["Zone"] },
     { "tag": "v2", "new_sqlite_classes": ["Stats"] }
   ],
+  // Workers Logs keeps the server's own log lines (joins, leaves, room summaries; see docs/ONLINE.md) for a few
+  // days. Invocation logs stay off, so no request details (addresses, headers, URLs) are stored.
+  "observability": {
+    "enabled": true,
+    "redact_query_string": true,
+    "logs": { "invocation_logs": false }
+  },
   "vars": {
     "ALLOWED_ORIGINS": "https://bsoulier.github.io,http://localhost:5173,http://localhost:4173"
   }

@@ -1,9 +1,11 @@
 import { DurableObject } from 'cloudflare:workers';
+import { playerName } from '../../src/net/names';
 import {
-  CLOSE_BAD, CLOSE_OUTDATED, type CityStats, MAX_LAYERS, PROTOCOL, TICK_MS, encodeRefusal, encodeStats,
+  CLOSE_BAD, CLOSE_FLOOD, CLOSE_FULL, CLOSE_OUTDATED, CLOSE_TAKEN, type CityStats, MAX_LAYERS, PROTOCOL, TICK_MS, ZONE,
+  encodeRefusal, encodeStats,
 } from '../../src/net/protocol';
 import { HOODS } from '../../src/world/hoods';
-import { StatsCore } from './stats';
+import { type RoomCount, StatsCore } from './stats';
 import { type Link, type Peer, ZoneCore } from './zone';
 
 interface Env {
@@ -30,6 +32,29 @@ const REPORT_MS = 45_000;
 const REPORT_SOON_MS = 5000;
 /** How long the public /stats answer is cached at the edge. */
 const STATS_CACHE_S = 30;
+const DEBUG_CACHE_S = 5;
+/** Players listed in one room's log line; the counts cover everyone. */
+const LOG_PLAYERS = 20;
+
+const CLOSE_NAMES: Record<number, string> = {
+  [CLOSE_FULL]: 'full', [CLOSE_TAKEN]: 'id taken', [CLOSE_BAD]: 'bad message', [CLOSE_FLOOD]: 'flood', [CLOSE_OUTDATED]: 'outdated page',
+  1000: 'closed', 1001: 'page left', 1005: 'no code', 1006: 'dropped',
+};
+
+/**
+ * One line of the server's log, seen live with `npx wrangler tail` and kept a few days by Workers Logs.
+ * Only random names, rooms, counts and distances: never an address or a position.
+ */
+function log(ev: string, fields: Record<string, unknown>): void {
+  console.log({ ev, ...fields });
+}
+
+/** Why a page closes a connection itself, as it says in the close frame (see `Online` in src/net/online.ts). */
+const CLIENT_REASONS = new Set(['away', 'online off', 'out of range', 'new name', 'no pong']);
+
+function closeName(code: number): string {
+  return CLOSE_NAMES[code] ?? String(code);
+}
 
 function linkTo(ws: WebSocket): Link {
   return {
@@ -60,6 +85,9 @@ export class Zone extends DurableObject<Env> {
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
   private lastTick = 0;
   private reportDue = false;
+  /** When the pending report alarm goes off. */
+  private alarmAt = 0;
+  /** The city holds a count from this room, which it must take back once nobody stands here. */
   private reported = false;
   /** The city's head count as last heard, ready to send to newcomers. */
   private city: ArrayBuffer | null = null;
@@ -74,8 +102,8 @@ export class Zone extends DurableObject<Env> {
       const p = this.room(a).restore(a.id, linkTo(ws), a.s ?? null, now);
       if (p) this.peers.set(ws, p);
     }
-    // Woken with people in it, it has most likely reported them; if not, clearing an absent entry is harmless.
-    this.reported = this.peers.size > 0;
+    // Woken with people standing in it, it has most likely reported them; if not, clearing an absent entry is harmless.
+    this.reported = (this.core?.count().length ?? 0) > 0;
   }
 
   private room(a: { seed: number; zx: number; zz: number; layer: number }): ZoneCore {
@@ -87,6 +115,11 @@ export class Zone extends DurableObject<Env> {
     return this.core;
   }
 
+  /** "seed/zx/zz/layer", as the room is named. */
+  private get key(): string {
+    return this.core ? `${this.seed}/${this.core.zx}/${this.core.zz}/${this.layer}` : '?';
+  }
+
   async fetch(req: Request): Promise<Response> {
     const q = new URL(req.url).searchParams;
     const at = { seed: Number(q.get('seed')), zx: Number(q.get('zx')), zz: Number(q.get('zz')), layer: Number(q.get('layer')) };
@@ -96,12 +129,15 @@ export class Zone extends DurableObject<Env> {
     this.ctx.acceptWebSocket(server);
     // Refusals go through the socket: browsers only show a WebSocket's close code, never an HTTP status.
     const res = Number(q.get('v')) !== PROTOCOL ? CLOSE_OUTDATED : this.room(at).join(id, linkTo(server), Date.now());
+    const room = `${at.seed}/${at.zx}/${at.zz}/${at.layer}`;
     if (typeof res === 'number') {
       server.send(encodeRefusal(res));
       server.close(res, 'refused');
+      log('refused', { room, name: playerName(id), why: closeName(res), v: q.get('v') });
     } else {
       server.serializeAttachment({ id, ...at } satisfies Saved);
       this.peers.set(server, res);
+      log('join', { room, name: playerName(id), peers: this.peers.size });
     }
     return new Response(null, { status: 101, webSocket: client });
   }
@@ -112,18 +148,22 @@ export class Zone extends DurableObject<Env> {
     const placed = p.placed;
     const code = typeof msg === 'string' ? CLOSE_BAD : this.core.receive(p, msg, Date.now());
     if (code) {
-      this.drop(ws);
+      this.drop(ws, closeName(code));
       ws.close(code, 'closed');
       return;
     }
-    // Newcomers hear the city's head count at once rather than at the next report.
-    if (!placed && p.placed && this.city) linkTo(ws).send(this.city);
+    if (!placed && p.placed) {
+      log('placed', { room: this.key, name: playerName(p.id), here: p.home });
+      // Newcomers hear the city's head count at once rather than at the next report.
+      if (this.city) linkTo(ws).send(this.city);
+    }
     this.schedule();
     this.countSoon();
   }
 
-  webSocketClose(ws: WebSocket, code: number): void {
-    this.drop(ws);
+  webSocketClose(ws: WebSocket, code: number, reason: string): void {
+    // Pages say why they let go; only those words are logged, since anyone can send any text.
+    this.drop(ws, CLIENT_REASONS.has(reason) ? `${closeName(code)}: ${reason}` : closeName(code));
     try {
       ws.close(code >= 3000 && code < 5000 ? code : 1000, 'bye');
     } catch {
@@ -132,14 +172,15 @@ export class Zone extends DurableObject<Env> {
   }
 
   webSocketError(ws: WebSocket): void {
-    this.drop(ws);
+    this.drop(ws, 'error');
   }
 
-  private drop(ws: WebSocket): void {
+  private drop(ws: WebSocket, why: string): void {
     const p = this.peers.get(ws);
     if (!p) return;
     this.peers.delete(ws);
     this.core?.leave(p);
+    log('leave', { room: this.key, name: playerName(p.id), why, peers: this.peers.size });
     this.schedule();
     // The last one out tells the city straight away: an empty room may be gone before any alarm.
     if (this.peers.size === 0 && this.reported) void this.report();
@@ -166,20 +207,29 @@ export class Zone extends DurableObject<Env> {
     this.saveTimer = setTimeout(() => this.save(), IDLE_SAVE_MS);
   }
 
-  /** An alarm (not a timer) carries the head count, so a sleeping room still reports and then sleeps again. */
+  /**
+   * An alarm (not a timer) carries the head count, so a sleeping room still reports and then sleeps again.
+   * A change brings a far-off regular report forward: a room that emptied and filled again would otherwise
+   * keep showing its newcomers the old count for up to REPORT_MS.
+   */
   private countSoon(): void {
-    if (this.reportDue || !this.core?.countChanged) return;
+    if (!this.core?.countChanged) return;
+    const at = Date.now() + REPORT_SOON_MS;
+    if (this.reportDue && this.alarmAt <= at) return;
     this.reportDue = true;
-    void this.ctx.storage.setAlarm(Date.now() + REPORT_SOON_MS);
+    this.alarmAt = at;
+    void this.ctx.storage.setAlarm(at);
   }
 
   async alarm(): Promise<void> {
     this.reportDue = false;
     if (!this.core || this.peers.size === 0) return;
     await this.report();
-    if (this.peers.size > 0) {
+    // Only rooms someone stands in keep reporting; one with watchers alone has nothing to count.
+    if (this.core.count().length > 0) {
       this.reportDue = true;
-      await this.ctx.storage.setAlarm(Date.now() + REPORT_MS);
+      this.alarmAt = Date.now() + REPORT_MS;
+      await this.ctx.storage.setAlarm(this.alarmAt);
     }
   }
 
@@ -187,14 +237,21 @@ export class Zone extends DurableObject<Env> {
     const core = this.core;
     if (!core) return;
     core.countChanged = false;
+    const hoods = core.count();
+    if (hoods.length === 0 && !this.reported) return;
     let city: CityStats;
     try {
-      const r = await statsFor(this.env, this.seed).report(`${core.zx}/${core.zz}/${this.layer}`, core.count());
+      const r = await statsFor(this.env, this.seed).report(`${core.zx}/${core.zz}/${this.layer}`, hoods);
       city = { total: r.total, hoods: r.hoods.map(([h, n]): [number, number] => [h, n]) };
     } catch {
       return;
     }
-    this.reported = this.peers.size > 0;
+    this.reported = hoods.length > 0;
+    const all = core.snapshot();
+    log('room', {
+      room: this.key, city: city.total, here: all.filter((p) => p.home).length, watching: all.filter((p) => !p.home).length,
+      players: all.slice(0, LOG_PLAYERS).map((p) => ({ name: playerName(p.id), here: p.home, sees: p.seen, nearest: p.nearest })),
+    });
     const msg = encodeStats(city);
     if (this.city && sameBytes(this.city, msg)) return;
     this.city = msg;
@@ -227,16 +284,36 @@ function sameBytes(a: ArrayBuffer, b: ArrayBuffer): boolean {
   return true;
 }
 
-/** Adds up the head counts of every occupied room of one city. Kept in memory: rooms re-report often. */
+/**
+ * Adds up the head counts of every occupied room of one city. The object leaves memory about 10 s after
+ * its last call, well within a room's 45 s between reports, so the counts live in its storage too.
+ */
 export class Stats extends DurableObject<Env> {
   private readonly core = new StatsCore();
 
+  constructor(ctx: DurableObjectState, env: Env) {
+    super(ctx, env);
+    void ctx.blockConcurrencyWhile(async () => {
+      for (const [room, r] of await ctx.storage.list<RoomCount>()) this.core.restore(room, r);
+    });
+  }
+
   report(room: string, hoods: [number, number][]): CityStats {
-    return this.core.report(room, hoods, Date.now());
+    return this.saved(this.core.report(room, hoods, Date.now()));
   }
 
   totals(): CityStats {
-    return this.core.totals(Date.now());
+    return this.saved(this.core.totals(Date.now()));
+  }
+
+  rooms(): { room: string; players: number; hoods: [number, number][]; age: number }[] {
+    return this.saved(this.core.rooms(Date.now()));
+  }
+
+  /** Writes what changed; the reply waits for the writes, so a count is never lost to an eviction. */
+  private saved<T>(result: T): T {
+    for (const [room, r] of this.core.writes()) void (r ? this.ctx.storage.put(room, r) : this.ctx.storage.delete(room));
+    return result;
   }
 }
 
@@ -276,15 +353,52 @@ async function publicStats(env: Env, seed: number, ctx: ExecutionContext): Promi
   return res;
 }
 
+/**
+ * Which rooms have players standing in them, to see why two players do not meet: a different zone
+ * (1 km squares), layer or seed means they cannot see each other. Counts only, cached briefly.
+ */
+async function debugRooms(env: Env, seed: number, ctx: ExecutionContext): Promise<Response> {
+  const cache = caches.default;
+  const key = new Request(`https://debug.cache/${seed}`);
+  const hit = await cache.match(key);
+  if (hit) return hit;
+  const rooms = await statsFor(env, seed).rooms();
+  const body = {
+    seed,
+    protocol: PROTOCOL,
+    online: rooms.reduce((s, r) => s + r.players, 0),
+    rooms: rooms.map((r) => {
+      const [zx, zz, layer] = r.room.split('/').map(Number);
+      return {
+        zone: [zx, zz],
+        covers: { x: [zx * ZONE, (zx + 1) * ZONE], z: [zz * ZONE, (zz + 1) * ZONE] },
+        layer,
+        players: r.players,
+        districts: Object.fromEntries(r.hoods.map(([h, n]) => [HOODS[h]?.name ?? 'UNKNOWN', n])),
+        reported_s_ago: Math.round(r.age / 1000),
+      };
+    }),
+  };
+  const res = new Response(`${JSON.stringify(body, null, 2)}\n`, {
+    headers: {
+      'content-type': 'application/json',
+      'cache-control': `public, max-age=${DEBUG_CACHE_S}`,
+      'access-control-allow-origin': '*',
+    },
+  });
+  ctx.waitUntil(cache.put(key, res.clone()));
+  return res;
+}
+
 export default {
   async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(req.url);
     const q = url.searchParams;
     if (url.pathname === '/') return new Response('Glyphwalk online server\n', { headers: { 'content-type': 'text/plain' } });
-    if (url.pathname === '/stats') {
+    if (url.pathname === '/stats' || url.pathname === '/debug') {
       const seed = q.has('seed') ? int(q.get('seed'), 0, 2 ** 31 - 1) : 1337;
       if (seed === null) return new Response('Bad request\n', { status: 400 });
-      return publicStats(env, seed, ctx);
+      return url.pathname === '/stats' ? publicStats(env, seed, ctx) : debugRooms(env, seed, ctx);
     }
     if (url.pathname !== '/zone') return new Response('Not found\n', { status: 404 });
     if (req.headers.get('Upgrade')?.toLowerCase() !== 'websocket') return new Response('Expected a WebSocket\n', { status: 426 });

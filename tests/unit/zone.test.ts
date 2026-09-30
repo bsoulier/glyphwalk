@@ -4,7 +4,7 @@ import {
   CLOSE_BAD, CLOSE_FLOOD, CLOSE_FULL, CLOSE_TAKEN, EMOTE_GAP_MS, MAX_SEEN, SEE, ZONE, decodeUpdate, encodeEmote, encodeHood,
   encodeState,
 } from '../../src/net/protocol';
-import { STALE_MS, StatsCore } from '../../server/src/stats';
+import { SAVE_MS, STALE_MS, StatsCore } from '../../server/src/stats';
 
 /** A client's side of the socket: everything the zone sent it, decoded. */
 class Client implements Link {
@@ -147,6 +147,19 @@ describe('zone server', () => {
     expect(zone.count()).toEqual([]);
   });
 
+  it('sums up the room for the log with distances, not positions', () => {
+    const zone = new ZoneCore(0, 0);
+    join(zone, 1, 100, 100);
+    join(zone, 2, 130, 140);
+    join(zone, 3, ZONE + 20, 100);
+    zone.tick();
+    expect(zone.snapshot()).toEqual([
+      { id: 1, home: true, seen: 1, nearest: 50 },
+      { id: 2, home: true, seen: 1, nearest: 50 },
+      { id: 3, home: false, seen: 0, nearest: 915 },
+    ]);
+  });
+
   it('keeps a full room of moving players cheap', () => {
     const zone = new ZoneCore(0, 0);
     const peers: Peer[] = [];
@@ -169,5 +182,40 @@ describe('city head count', () => {
     expect(city.report('1/0/0', [[1, 4]], 10)).toEqual({ total: 8, hoods: [[1, 5], [0, 3]] });
     expect(city.report('0/0/0', [], 20)).toEqual({ total: 4, hoods: [[1, 4]] });
     expect(city.totals(10 + STALE_MS + 1)).toEqual({ total: 0, hoods: [] });
+  });
+
+  it('lists the occupied rooms, busiest first, with how long ago each reported', () => {
+    const city = new StatsCore();
+    city.report('0/0/0', [[0, 1]], 0);
+    city.report('-1/0/0', [[3, 2], [1, 1]], 1000);
+    expect(city.rooms(4000)).toEqual([
+      { room: '-1/0/0', players: 3, hoods: [[3, 2], [1, 1]], age: 3000 },
+      { room: '0/0/0', players: 1, hoods: [[0, 1]], age: 4000 },
+    ]);
+    expect(city.rooms(STALE_MS + 500)).toEqual([{ room: '-1/0/0', players: 3, hoods: [[3, 2], [1, 1]], age: STALE_MS - 500 }]);
+  });
+
+  it('writes a room to storage when its count changes or grows old, and survives being rebuilt from it', () => {
+    const city = new StatsCore();
+    city.report('0/0/0', [[0, 2]], 0);
+    expect(city.writes()).toEqual([['0/0/0', { hoods: [[0, 2]], at: 0 }]]);
+    city.report('0/0/0', [[0, 2]], 45_000);
+    expect(city.writes()).toEqual([]);
+    city.report('0/0/0', [[0, 2]], SAVE_MS + 1);
+    expect(city.writes()).toEqual([['0/0/0', { hoods: [[0, 2]], at: SAVE_MS + 1 }]]);
+    city.report('0/0/0', [[0, 1]], SAVE_MS + 2);
+    city.report('1/0/0', [[4, 1]], SAVE_MS + 2);
+    const saved = new Map(city.writes());
+    expect(saved.size).toBe(2);
+    city.report('9/9/0', [], SAVE_MS + 3);
+    expect(city.writes()).toEqual([]);
+
+    // Evicted from memory: a new object reads what was written and carries on.
+    const woken = new StatsCore();
+    for (const [room, r] of saved) woken.restore(room, r!);
+    expect(woken.totals(SAVE_MS + 10_000)).toEqual({ total: 2, hoods: [[0, 1], [4, 1]] });
+    woken.report('1/0/0', [], SAVE_MS + 10_000);
+    expect(woken.totals(SAVE_MS + STALE_MS + 10)).toEqual({ total: 0, hoods: [] });
+    expect(new Map(woken.writes())).toEqual(new Map([['1/0/0', null], ['0/0/0', null]]));
   });
 });

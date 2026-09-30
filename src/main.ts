@@ -39,7 +39,7 @@ import { trackEvent, trackVisit } from './ui/analytics';
 import { Online } from './net/online';
 import { loadOnlineId, newOnlineId, saveOnlineId } from './net/identity';
 import { playerName } from './net/names';
-import { EMOTES, type PlayerState } from './net/protocol';
+import { EMOTES, type PlayerState, SEE } from './net/protocol';
 import type { OtherPlayer } from './world/others';
 import { STATIONS as LOOP_STOPS, type Station, nextTrain, stairsNear, stationsOf } from './world/loop';
 import type { TrainRef } from './world/train';
@@ -496,7 +496,7 @@ function onlineText(): string {
       const n = online.count;
       // The city's count includes the player and lags by up to a minute, so it never reads below who is in sight.
       const city = Math.max(online.city?.total ?? 0, n + 1);
-      return city > 1 ? `${n === 0 ? 'nobody near you' : `${n} near you`}, ${city} in the city` : 'nobody near you yet';
+      return city > 1 ? `${n === 0 ? `nobody within ${SEE} m` : `${n} near you`}, ${city} in the city` : 'nobody near you yet';
     }
     case 'connecting': return 'connecting...';
     case 'paused': return 'paused while away';
@@ -504,6 +504,21 @@ function onlineText(): string {
     case 'offline': return 'offline, retrying';
     case 'outdated': return 'reload the page to play';
   }
+}
+
+/**
+ * What to compare when two players do not see each other: the same seed, the same zone and layer, and
+ * within SEE of each other.
+ */
+function onlineNerds(): string[] {
+  if (!online) return [];
+  let nearest = Infinity;
+  for (const r of others) nearest = Math.min(nearest, Math.hypot(r.x - cam.x, r.z - cam.z));
+  const seen = `${online.count} in sight${nearest < Infinity ? `, nearest ${nearest.toFixed(0)} m` : ''} (sight ${SEE} m)`;
+  return [
+    `Online         ${playerName(online.myId)}   ${online.status}   ${seen}`,
+    ...online.linkLines(performance.now()).map((l, k) => `${k === 0 ? 'Zones' : ''}`.padEnd(15) + l),
+  ];
 }
 
 const photo = new PhotoMode(touch !== null);
@@ -905,6 +920,7 @@ function updateHud(): void {
       `Viewport       ${window.innerWidth}x${window.innerHeight} css px   canvas ${canvas.width}x${canvas.height}`,
       `World seed     ${worldSeed}`,
       `Audio          ${sound.status}`,
+      ...onlineNerds(),
     ].join('\n'));
   }
 
