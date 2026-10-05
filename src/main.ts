@@ -35,6 +35,7 @@ import { toast } from './ui/toast';
 import { CATS_PER_HOOD } from './world/cats';
 import { MAX_DETAIL, Quality, lowEndDevice } from './ui/quality';
 import { LUDICROUS_DIST, loadSettings, saveSettings } from './ui/settings';
+import { fitBuffer, fitGrid, viewBox } from './ui/viewport';
 import { trackEvent, trackVisit } from './ui/analytics';
 import { Online } from './net/online';
 import { loadOnlineId, newOnlineId, saveOnlineId } from './net/identity';
@@ -331,24 +332,43 @@ let cellPxH = 1;
 let dpr = 1;
 
 function layout(): void {
+  const view = viewBox();
   dpr = Math.min(window.devicePixelRatio || 1, quality.maxDpr);
   const preset = quality.preset;
   cellPxW = Math.max(2, Math.round(preset.w * dpr));
   cellPxH = Math.max(3, Math.round(preset.h * dpr));
-  const cols = Math.max(16, Math.floor((window.innerWidth * dpr) / cellPxW));
-  const rows = Math.max(8, Math.floor((window.innerHeight * dpr) / cellPxH));
+  let { cols, rows } = fitGrid(view.w, view.h, dpr, cellPxW, cellPxH);
   canvas.width = cols * cellPxW;
   canvas.height = rows * cellPxH;
-  canvas.style.width = `${canvas.width / dpr}px`;
-  canvas.style.height = `${canvas.height / dpr}px`;
-  fb.resize(cols, rows);
+  canvas.style.width = `${view.w}px`;
+  canvas.style.height = `${view.h}px`;
+  canvas.style.left = `${view.left}px`;
+  canvas.style.top = `${view.top}px`;
+  // Insets of the layout viewport that sit outside the visible page (X's tweet chrome, iOS toolbars).
+  const root = document.documentElement.style;
+  root.setProperty('--view-inset-bottom', `${Math.max(0, window.innerHeight - view.top - view.h)}px`);
+  root.setProperty('--view-inset-right', `${Math.max(0, window.innerWidth - view.left - view.w)}px`);
   presenter.setAtlas(buildAtlas(cellPxW, cellPxH));
   presenter.resize(cols, rows);
+  const buf = presenter.bufferSize();
+  if (buf.width > 0 && buf.height > 0) {
+    const fitted = fitBuffer(buf.width, buf.height, cellPxW, cellPxH);
+    if (fitted.cols !== cols || fitted.rows !== rows) {
+      cols = fitted.cols;
+      rows = fitted.rows;
+      presenter.resize(cols, rows);
+    }
+  }
+  fb.resize(cols, rows);
   rain.resize(cols, rows);
 }
 
 window.addEventListener('resize', layout);
+window.visualViewport?.addEventListener('resize', layout);
+window.visualViewport?.addEventListener('scroll', layout);
 layout();
+// Some in-app WebViews only report the real drawing buffer on the next frame.
+requestAnimationFrame(layout);
 hud.sync(settings, quality.cellSetting);
 hud.openSections(settings.open);
 if (settings.dist >= LUDICROUS_DIST) toast('Ludicrous draw distance is on, at your own risk (Display > Draw distance).', 4000);
@@ -389,12 +409,9 @@ canvas.addEventListener('mousedown', (e) => mapPick(e.clientX, e.clientY));
 const touch = isTouch
   ? new TouchControls(input, [
     { label: 'MODE', code: 'KeyV' },
-    { label: 'NEXT', code: 'KeyN' },
-    { label: 'PHOTO', code: 'KeyP' },
     { label: 'MAP', code: 'KeyM' },
-    { label: 'AREA', code: 'KeyB' },
+    { label: 'PHOTO', code: 'KeyP' },
     { label: 'TILT', code: 'tilt' },
-    { label: 'SOUND', code: 'KeyU' },
     { label: 'MENU', code: 'KeyH' },
   ])
   : null;
@@ -603,6 +620,7 @@ function touchContext(): TouchButton[] {
   if (fullMap) return [{ label: 'ZOOM +', code: 'Equal' }, { label: 'ZOOM -', code: 'Minus' }];
   if (emoteMenu) return [...EMOTES.map((e, k) => ({ label: e.label.toUpperCase(), code: `Digit${k + 1}` })), { label: 'BACK', code: 'KeyZ' }];
   const emote: TouchButton[] = online && settings.online && online.count > 0 ? [{ label: 'EMOTE', code: 'KeyZ' }] : [];
+  if (player.mode === 'cctv') return [{ label: 'NEXT CAM', code: 'KeyN' }, ...emote];
   if (player.mode === 'fly') return [{ label: 'RISE', code: 'KeyE', hold: true }, { label: 'SINK', code: 'KeyQ', hold: true }, ...emote];
   if (player.mode === 'taxi') return [{ label: 'RADIO', code: 'KeyE' }, { label: 'GET OUT', code: 'Enter' }, ...emote];
   if (player.mode === 'rail') return [{ label: 'GET OFF', code: 'Enter' }, ...emote];
@@ -687,7 +705,7 @@ function prompts(): Prompt[] {
   const p: Prompt[] = [];
   const it = player.inside(world);
   if (touch) {
-    if (performance.now() < touchIntroUntil) p.push(['', 'left: move (push far to run) \u00b7 right: look']);
+    if (performance.now() < touchIntroUntil) p.push(['', 'pad: move (push out to run) \u00b7 right: look']);
   } else if (fullMap) {
     return [['CLICK', 'jump there'], ['+ -', 'zoom'], ['M', 'close']];
   } else if (!input.locked && player.mode !== 'cctv') p.push(['CLICK', 'look around']);
@@ -921,7 +939,7 @@ function updateHud(): void {
       `Blocks cached  ${world.city.cachedBlocks}`,
       `Position       ${cam.x.toFixed(1)} / ${cam.z.toFixed(1)}   alt ${cam.y.toFixed(1)}`,
       `Bearing        ${bearing.toFixed(0).padStart(3, '0')} ${compass}   pitch ${((cam.pitch * 180) / Math.PI).toFixed(0)} deg`,
-      `Viewport       ${window.innerWidth}x${window.innerHeight} css px   canvas ${canvas.width}x${canvas.height}`,
+      `Viewport       ${viewBox().w.toFixed(0)}x${viewBox().h.toFixed(0)} css px   canvas ${canvas.width}x${canvas.height}`,
       `World seed     ${worldSeed}`,
       `Audio          ${sound.status}`,
       ...onlineNerds(),

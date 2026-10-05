@@ -24,7 +24,7 @@ const DEG = Math.PI / 180;
  */
 export class TouchControls {
   readonly root = document.createElement('div');
-  private readonly stick = document.createElement('div');
+  private readonly well = document.createElement('div');
   private readonly knob = document.createElement('div');
   private readonly ctx = document.createElement('div');
   private readonly tiltBtn: HTMLButtonElement | null = null;
@@ -48,9 +48,9 @@ export class TouchControls {
     move.className = 't-zone t-move';
     const look = document.createElement('div');
     look.className = 't-zone t-look';
-    this.stick.className = 't-stick';
+    this.well.className = 't-well';
     this.knob.className = 't-knob';
-    this.stick.append(this.knob);
+    this.well.append(this.knob);
     const bar = document.createElement('div');
     bar.className = 't-bar';
     for (const b of buttons) {
@@ -59,18 +59,17 @@ export class TouchControls {
       bar.append(el);
     }
     this.ctx.className = 't-ctx';
-    this.root.append(move, look, this.stick, bar, this.ctx);
+    this.root.append(move, look, this.well, bar, this.ctx);
     document.body.append(this.root);
 
     move.addEventListener('pointerdown', (e) => {
       if (this.moveId !== -1) return;
       this.moveId = e.pointerId;
       move.setPointerCapture(e.pointerId);
-      this.mx0 = e.clientX;
-      this.my0 = e.clientY;
-      this.stick.style.left = `${e.clientX}px`;
-      this.stick.style.top = `${e.clientY}px`;
-      this.stick.classList.add('on');
+      const r = this.well.getBoundingClientRect();
+      this.mx0 = r.left + r.width / 2;
+      this.my0 = r.top + r.height / 2;
+      this.well.classList.add('on');
       this.moveStick(e.clientX, e.clientY);
     });
     move.addEventListener('pointermove', (e) => {
@@ -81,7 +80,8 @@ export class TouchControls {
       this.moveId = -1;
       this.input.stickX = 0;
       this.input.stickY = 0;
-      this.stick.classList.remove('on');
+      this.well.classList.remove('on');
+      this.knob.style.transform = '';
     };
     move.addEventListener('pointerup', endMove);
     move.addEventListener('pointercancel', endMove);
@@ -158,7 +158,7 @@ export class TouchControls {
       dy *= max / len;
     }
     this.knob.style.transform = `translate(${dx}px, ${dy}px)`;
-    this.stick.classList.toggle('run', len > STICK_R * 1.2);
+    this.well.classList.toggle('run', len > STICK_R * 1.2);
     this.input.stickX = dx / STICK_R;
     this.input.stickY = -dy / STICK_R;
   }

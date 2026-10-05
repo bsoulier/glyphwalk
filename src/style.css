@@ -1,20 +1,22 @@
 html,
 body {
   margin: 0;
+  width: 100%;
   height: 100%;
+  height: 100dvh;
   background: #000;
   overflow: hidden;
 }
 
 body {
-  display: flex;
-  align-items: center;
-  justify-content: center;
   font-family: ui-monospace, Menlo, Consolas, monospace;
   color: #7dffb0;
 }
 
 #screen {
+  position: fixed;
+  left: 0;
+  top: 0;
   display: block;
   image-rendering: pixelated;
   cursor: crosshair;
@@ -335,8 +337,13 @@ body.touch #prompt {
 body.photo #hud,
 body.photo #corner,
 body.photo #prompt,
-body.photo #touch .t-bar {
+body.photo #touch .t-bar,
+body.photo #touch .t-well {
   display: none;
+}
+
+body.photo #touch .t-zone {
+  bottom: max(8px, env(safe-area-inset-bottom), var(--view-inset-bottom, 0px));
 }
 
 #photobar {
@@ -414,77 +421,90 @@ body.photo #photobar,
 #touch .t-zone {
   position: absolute;
   top: 0;
-  bottom: 0;
+  bottom: calc(var(--touch-bar, 58px) + max(8px, env(safe-area-inset-bottom), var(--view-inset-bottom, 0px)));
 }
 
 #touch .t-move {
   left: 0;
-  width: 45%;
+  width: 42%;
 }
 
 #touch .t-look {
   right: 0;
-  width: 55%;
+  width: 58%;
 }
 
-#touch .t-stick {
+#touch .t-well {
   position: absolute;
-  width: 112px;
-  height: 112px;
-  margin: -56px 0 0 -56px;
-  border: 1px dashed rgba(125, 255, 176, 0.45);
+  left: max(16px, env(safe-area-inset-left));
+  /* Above the minimap, which sits in the same corner of the view. */
+  bottom: calc(var(--touch-bar, 58px) + 118px + max(0px, env(safe-area-inset-bottom), var(--view-inset-bottom, 0px)));
+  width: 120px;
+  height: 120px;
+  border: 2px dashed rgba(125, 255, 176, 0.4);
   border-radius: 50%;
-  display: none;
   pointer-events: none;
 }
 
-#touch .t-stick.on {
-  display: block;
+#touch .t-well.on {
+  border-color: rgba(125, 255, 176, 0.85);
+  background: rgba(125, 255, 176, 0.06);
 }
 
-#touch .t-stick.run {
-  border-color: rgba(255, 210, 120, 0.8);
+#touch .t-well.on.run {
+  border-color: rgba(255, 210, 120, 0.85);
 }
 
 #touch .t-knob {
   position: absolute;
-  left: 36px;
-  top: 36px;
+  left: 40px;
+  top: 40px;
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  background: rgba(125, 255, 176, 0.3);
-  border: 1px solid rgba(125, 255, 176, 0.8);
+  background: rgba(125, 255, 176, 0.35);
+  border: 1px solid rgba(125, 255, 176, 0.85);
 }
 
 #touch .t-bar,
 #touch .t-ctx {
   position: absolute;
   display: flex;
-  gap: 6px;
+  gap: 8px;
 }
 
 #touch .t-bar {
-  right: max(10px, env(safe-area-inset-right));
-  bottom: max(10px, env(safe-area-inset-bottom));
-  flex-direction: column;
+  left: max(8px, env(safe-area-inset-left));
+  right: max(8px, env(safe-area-inset-right), var(--view-inset-right, 0px));
+  bottom: max(8px, env(safe-area-inset-bottom), var(--view-inset-bottom, 0px));
+  flex-direction: row;
+  justify-content: stretch;
 }
 
 #touch .t-ctx {
-  right: calc(max(10px, env(safe-area-inset-right)) + 76px);
-  bottom: max(10px, env(safe-area-inset-bottom));
-  flex-direction: column-reverse;
+  right: max(8px, env(safe-area-inset-right), var(--view-inset-right, 0px));
+  bottom: calc(var(--touch-bar, 58px) + max(8px, env(safe-area-inset-bottom), var(--view-inset-bottom, 0px)));
+  flex-direction: row-reverse;
+  flex-wrap: wrap;
+  max-width: 58%;
+  justify-content: flex-start;
 }
 
 #touch .t-btn {
-  min-width: 64px;
-  padding: 9px 8px;
-  background: rgba(2, 10, 6, 0.72);
+  flex: 1 1 0;
+  min-width: 56px;
+  min-height: 44px;
+  padding: 10px 8px;
+  background: rgba(2, 10, 6, 0.78);
   color: #7dffb0;
   border: 1px solid #1f5a3a;
-  font: 11px ui-monospace, Menlo, Consolas, monospace;
-  letter-spacing: 0.08em;
+  font: 13px ui-monospace, Menlo, Consolas, monospace;
+  letter-spacing: 0.06em;
   touch-action: none;
+}
+
+#touch .t-ctx .t-btn {
+  flex: 0 0 auto;
 }
 
 #touch .t-btn.down {

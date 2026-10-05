@@ -9,6 +9,8 @@ export interface Presenter {
   setAtlas(atlas: GlyphAtlas): void;
   resize(cols: number, rows: number): void;
   present(fb: FrameBuffer, style: number, scanlines: boolean): void;
+  /** The GPU (or 2D) buffer we actually got; some WebViews ignore `canvas.width`. */
+  bufferSize(): { width: number; height: number };
 }
 
 const VERT = `#version 300 es
@@ -122,21 +124,32 @@ export class WebGLPresenter implements Presenter {
       gl.bindTexture(gl.TEXTURE_2D, tex);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, cols, rows, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
     }
-    gl.viewport(0, 0, cols * this.cellW, rows * this.cellH);
+    this.useBuffer();
+  }
+
+  bufferSize(): { width: number; height: number } {
+    return { width: this.gl.drawingBufferWidth, height: this.gl.drawingBufferHeight };
   }
 
   present(fb: FrameBuffer, style: number, scanlines: boolean): void {
     const gl = this.gl;
+    this.useBuffer();
     gl.activeTexture(gl.TEXTURE1);
     gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, this.cols, this.rows, gl.RGBA, gl.UNSIGNED_BYTE, fb.fgBytes);
     gl.activeTexture(gl.TEXTURE2);
     gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, this.cols, this.rows, gl.RGBA, gl.UNSIGNED_BYTE, fb.bgBytes);
     gl.uniform2i(this.uCell, this.cellW, this.cellH);
     gl.uniform1i(this.uAtlasCols, this.atlasCols);
-    gl.uniform1i(this.uHeight, this.rows * this.cellH);
+    gl.uniform1i(this.uHeight, gl.drawingBufferHeight);
     gl.uniform1i(this.uStyle, style);
     gl.uniform1f(this.uScan, scanlines && this.cellH >= 8 ? 0.22 : 0);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+
+  /** Cover the buffer we really have, not the size we asked the canvas for. */
+  private useBuffer(): void {
+    const gl = this.gl;
+    gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
   }
 }
 
@@ -182,6 +195,11 @@ export class CanvasPresenter implements Presenter {
   }
 
   resize(): void {}
+
+  bufferSize(): { width: number; height: number } {
+    const c = this.ctx.canvas;
+    return { width: c.width, height: c.height };
+  }
 
   present(fb: FrameBuffer): void {
     const ctx = this.ctx;

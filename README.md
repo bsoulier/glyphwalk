@@ -80,10 +80,10 @@ about 90 kB of gzipped JavaScript.
 | `O` / `H` | Auto tour (also starts after 45 s idle) / settings panel |
 | `Z` | Emotes, when playing online |
 
-On a phone the left half of the screen is a joystick (push further to run) and the right half drags the view. The
-buttons on the right switch camera, take photos, open the map and the settings, and extra buttons appear when they are
-useful: a taxi on the street (and get out when riding), rise and sink when flying, the lift, the radio, and the photo
-actions.
+On a phone a pad in the lower left is the joystick (push further to run) and the rest of the screen drags the view.
+The bar at the bottom switches camera, opens the map, takes photos, tilts the view and opens the settings. Extra
+buttons appear when they are useful: a taxi on the street (and get out when riding), rise and sink when flying, the
+lift, the radio, the next CCTV camera, and the photo actions.
 
 The settings panel lets you pick the district, time of day, weather, how often fireworks and neon glitches happen and
 the volume; folding sections hold the radio station and each kind of sound, the display options, and the key list.

@@ -110,7 +110,7 @@ export class Hud {
     this.hood.append(landmark);
     fill(this.cell, [['auto', 'Auto (fit target FPS)'], ...CELL_PRESETS.map((p): [string, string] => [p.id, p.label])]);
     fill(this.fps, FPS.map((f): [string, string] => [String(f), `${f} fps`]));
-    fill(this.dist, DISTANCES.map((d): [string, string] => [String(d), d === LUDICROUS_DIST ? `${d} m (ludicrous)` : `${d} m`]));
+    fill(this.dist, DISTANCES.map((d): [string, string] => [String(d), d === LUDICROUS_DIST ? `${d} m (ludicrous, at your own risk)` : `${d} m`]));
     fill(this.fov, FOVS.map((f): [string, string] => [String(f), `${f} deg`]));
     fill(this.style, STYLE_NAMES.map((n, k): [string, string] => [String(k), n]));
     const bind = (sel: HTMLSelectElement, fn: (v: string) => void) => {

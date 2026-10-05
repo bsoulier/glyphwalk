@@ -147,7 +147,7 @@ test('phone gets touch controls and a photo mode with its own buttons @phone', a
   const errors = watchErrors(page);
   await page.goto('./?hood=downtown&time=night');
   const bar = page.locator('#touch .t-bar .t-btn');
-  await expect(bar).toHaveText(['MODE', 'NEXT', 'PHOTO', 'MAP', 'AREA', 'TILT', 'SOUND', 'MENU']);
+  await expect(bar).toHaveText(['MODE', 'MAP', 'PHOTO', 'TILT', 'MENU']);
   await page.locator('#touch .t-btn', { hasText: 'PHOTO' }).tap();
   await expect(page.locator('#touch .t-ctx .t-btn')).toHaveText(['SAVE', 'GIF', 'COPY', 'LINK', 'EXIT']);
   await expect(page.locator('#hud')).toBeHidden();
