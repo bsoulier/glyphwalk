@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#000000" />
+    <meta name="description" content="Walk, ride and fly through an endless city drawn entirely in text characters. Runs in the browser, works offline." />
+    <meta property="og:title" content="Glyphwalk" />
+    <meta property="og:description" content="An endless city drawn entirely in text characters: rain, neon, night markets, fireworks and 45 hidden cats." />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Glyphwalk" />
+    <title>Glyphwalk</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23000'/%3E%3Ctext x='16' y='24' font-family='monospace' font-size='22' fill='%237dffb0' text-anchor='middle'%3E%23%3C/text%3E%3C/svg%3E" />
+    <script type="module" crossorigin src="./assets/index-DAS-c-oa.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-g-91hHeO.css">
+  </head>
+  <body>
+    <canvas id="screen"></canvas>
+
+    <aside id="hud">
+      <div class="title">GLYPHWALK <span class="dim">// v0.2</span></div>
+      <pre id="stats"></pre>
+      <div id="goal" class="dim">Find 9 cats in every district. Listen for meows.</div>
+      <label>District <select id="sel-hood"></select></label>
+      <label>Time of day <select id="sel-time"></select></label>
+      <label>Weather <select id="sel-weather"></select></label>
+      <label>Fireworks &amp; neon <select id="sel-events"></select></label>
+      <div class="sound">
+        <label class="check"><input type="checkbox" id="chk-sound" /> Sound</label>
+        <input type="range" id="rng-volume" min="0" max="100" step="5" aria-label="Volume" />
+      </div>
+      <div id="online-row" class="online" hidden>
+        <label class="check"><input type="checkbox" id="chk-online" /> Online as</label>
+        <span id="online-name"></span>
+        <button id="btn-rename" type="button" title="Draw another name">new name</button>
+      </div>
+      <details data-section="sound">
+        <summary>Sounds &amp; radio</summary>
+        <div id="sound-kinds" class="kinds"></div>
+        <label>Taxi radio <select id="sel-radio"></select></label>
+      </details>
+      <details data-section="display">
+        <summary>Display</summary>
+        <label>Cell size <select id="sel-cell"></select></label>
+        <label>Target <select id="sel-fps"></select></label>
+        <label>Draw distance <select id="sel-dist"></select></label>
+        <label>Field of view <select id="sel-fov"></select></label>
+        <label>Style <select id="sel-style"></select></label>
+        <label class="check"><input type="checkbox" id="chk-nerds" /> Stats for nerds</label>
+      </details>
+      <details data-section="keys">
+        <summary>Keys</summary>
+        <pre class="help">
+WASD  move       SHIFT run
+V 1-6 camera     N  next cam
+B     district   M  map
+K     Glyph Tower deck
+P     photo      L  link
+O     tour       F  fullscreen
+R     weather    Y  time
+G     style      T  scanlines
+U     sound      I  stats
+[ ]   cells      H  hide panel
+Other keys show up when they
+apply: lifts, taxis, the map.</pre>
+      </details>
+      <div class="actions">
+        <button id="btn-share" type="button">Share this view</button>
+        <button id="btn-install" type="button" hidden>Install app</button>
+      </div>
+      <div id="ios-hint" class="dim" hidden>Play full screen: Share, then Add to Home Screen</div>
+    </aside>
+
+    <div id="corner">
+      <div id="nerds" hidden>
+        <div class="head">Stats for nerds <button id="nerds-close" type="button" aria-label="Close stats">[X]</button></div>
+        <pre id="nerds-body"></pre>
+      </div>
+      <pre id="osd"></pre>
+    </div>
+    <div id="prompt"></div>
+
+  </body>
+</html>
